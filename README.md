@@ -72,11 +72,8 @@ python training/train_msa.py --config configs/pretrain.yaml
 python training/finetune_msa.py --config configs/finetune.yaml
 ```
 ### Evaluation
-```bash
-python evaluation/evaluate.py --model checkpoints/msa_finetuned.pth
-```
 
-Further evaluation performed in evaluation/evaluate-notebook.ipynb
+Evaluation is performed in notebooks in notebooks/
 
 ---
 
