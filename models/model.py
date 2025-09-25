@@ -21,7 +21,7 @@ import yaml
 
 from sklearn.preprocessing import StandardScaler, RobustScaler
 
-import blocks as modelfile
+from blocks import TabResnet
 
 class MaskedGaussianNLLLoss(nn.Module):
     def __init__(self, eps=1e-6, reduction='mean'):
@@ -417,11 +417,11 @@ class TabResnetWrapper(BaseEstimator):
         self.lasso = lasso
         self.wd = wd
 
-        pt_save_str='pt_model.pth',
-        ft_save_str='ft_model.pth',
-        pt_log_file='pt_loss.log',
-        ft_log_file='ft_loss.log',
-        checkpoint_interval=None,
+        self.pt_save_str = pt_save_str
+        self.ft_save_str = ft_save_str
+        self.pt_log_file = pt_log_file
+        self.ft_log_file = ft_log_file
+        self.checkpoint_interval = checkpoint_interval
 
     def _apply_mask(self, X, col_start_fixed=5, col_end_fixed=115, col_start_random=115):
         """
