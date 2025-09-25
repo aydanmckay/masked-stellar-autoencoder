@@ -37,11 +37,11 @@ def main():
     del cols
 
     blocks_dims = config['model']['layer_dims']
-    recon_cols = config['model']['recon_cols']
     pt_activ = config['model']['pt_activ_func']
     d_embed = config['model']['rtdl_embed']
     norm = config['model']['norm']
-    
+
+    recon_cols = config['data']['recon_cols']
     
     model = make_model(
         len(cols),
@@ -52,19 +52,19 @@ def main():
         norm,
     )
 
-    error_cols = config['model']['error_cols']
-    xp_ratio = config['model']['xp_masking_ratio']
-    m_ratio = config['model']['m_masking_ratio']
-    lr = config['model']['lr']
-    wd = config['model']['weight_decay']
-    lasso = config['model']['lasso']
-    opt = config['model']['optimizer']
-    lf = config['model']['loss_fn']
-    pt_save_file = config['model']['model_str']
-    pt_log_file = config['model']['log_file']
-    ci = config['model']['checkpoint_interval']
+    xp_ratio = config['training']['xp_masking_ratio']
+    m_ratio = config['training']['m_masking_ratio']
+    lr = config['training']['lr']
+    wd = config['training']['weight_decay']
+    lasso = config['training']['lasso']
+    opt = config['training']['optimizer']
+    lf = config['training']['loss_fn']
+    
+    pt_save_file = config['saving']['model_str']
+    pt_log_file = config['saving']['log_file']
+    ci = config['saving']['checkpoint_interval']
 
-    classes = config['data']['num_classes']
+    error_cols = config['data']['error_cols']
 
     # Initialize the pretraining wrapper
     pretrain_wrapper = TabResnetWrapper(
@@ -76,7 +76,6 @@ def main():
         recon_cols=recon_cols,
         xp_masking_ratio=xp_ratio,
         m_masking_ratio=m_ratio,
-        num_classes=classes,
         latent_size=blocks_dims[-1],
         lr=lr,
         optimizer=opt,
@@ -88,8 +87,8 @@ def main():
         checkpoint_interval=ci,
     )
 
-    epochs = config['model']['epochs']
-    batch = config['model']['mini_batch_size']
+    epochs = config['training']['epochs']
+    batch = config['training']['mini_batch_size']
 
     # pretrain, train, and predict
     pretrain_wrapper.pretrain_hdf(

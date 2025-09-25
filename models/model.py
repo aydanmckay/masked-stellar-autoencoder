@@ -373,7 +373,6 @@ class TabResnetWrapper(BaseEstimator):
                  error_cols,
                  recon_cols,
                  latent_size=256,
-                 num_classes=6,
                  xp_masking_ratio=0.9,
                  m_masking_ratio=0.9,
                  lr=1e-3,
@@ -412,7 +411,6 @@ class TabResnetWrapper(BaseEstimator):
         self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
         self.model.to(self.device)
         self.loss_fn = EncoderDecoderLoss(lf=lf)
-        self.num_classes = num_classes
         self.latent_size = latent_size
         self.lasso = lasso
         self.wd = wd
