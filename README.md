@@ -36,6 +36,7 @@ data/ # Scripts or instructions for data preprocessing
 models/ # Model architectures (Masked Autoencoder, prediction heads)
 training/ # Training loops, schedulers, and loss functions
 notebooks/ # Metrics, validation scripts, visualization tools, and exploratory analysis
+configs/ # Config file examples for running the model
 README.md # This file
 requirements.txt # Python dependencies
 ```
