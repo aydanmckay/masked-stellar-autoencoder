@@ -65,7 +65,7 @@ Requirements include:
 
 ### Pretraining (Masked Autoencoding)
 ```bash
-python training/train_msa.py --config configs/pretrain.yaml
+python training/pretrain_msa.py --config configs/pretrain.yaml
 ```
 ### Fine-tuning on Stellar Labels
 ```bash
