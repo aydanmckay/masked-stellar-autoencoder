@@ -35,8 +35,7 @@ The **Masked Stellar Autoencoder (MSA)** is a deep learning foundation model des
 data/ # Scripts or instructions for data preprocessing
 models/ # Model architectures (Masked Autoencoder, prediction heads)
 training/ # Training loops, schedulers, and loss functions
-evaluation/ # Metrics, validation scripts, and visualization tools
-notebooks/ # Example workflows and exploratory analysis
+notebooks/ # Metrics, validation scripts, visualization tools, and exploratory analysis
 README.md # This file
 requirements.txt # Python dependencies
 ```
