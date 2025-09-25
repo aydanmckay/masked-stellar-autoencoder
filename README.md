@@ -32,8 +32,8 @@ The **Masked Stellar Autoencoder (MSA)** is a deep learning foundation model des
 ## Repository Structure
 
 ```bash
-data/ # Scripts or instructions for data preprocessing (not raw data)
-models/ # Model architectures (Masked Autoencoder, Residual blocks, prediction heads)
+data/ # Scripts or instructions for data preprocessing
+models/ # Model architectures (Masked Autoencoder, prediction heads)
 training/ # Training loops, schedulers, and loss functions
 evaluation/ # Metrics, validation scripts, and visualization tools
 notebooks/ # Example workflows and exploratory analysis
@@ -75,6 +75,8 @@ python training/finetune_msa.py --config configs/finetune.yaml
 ```bash
 python evaluation/evaluate.py --model checkpoints/msa_finetuned.pth
 ```
+
+Further evaluation performed in evaluation/evaluate-notebook.ipynb
 
 ---
 
