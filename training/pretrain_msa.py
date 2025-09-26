@@ -3,6 +3,12 @@ import h5py
 import argparse
 from sklearn.preprocessing import RobustScaler
 import numpy as np
+import os
+import sys
+
+# Add the repo root to Python path
+repo_root = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+sys.path.insert(0, repo_root)
 
 from models.model import make_model, TabResnetWrapper
 
@@ -32,9 +38,7 @@ def main():
     
     X = np.column_stack([TabResnetWrapper._clean_column(col, X[col]) for col in cols])
     featurescaler.fit(X)
-    
     del X
-    del cols
 
     blocks_dims = config['model']['layer_dims']
     pt_activ = config['model']['pt_activ_func']

@@ -1,6 +1,7 @@
 data:
-  datafile: '/arc/projects/k-pop/catalogues/andrae2023/sslset-realmags-full-052725.h5'
-  valid_keys: ['','']
+  # datafile: '/arc/projects/k-pop/catalogues/andrae2023/sslset-realmags-full-052725.h5'
+  datafile: '/arc/home/aydanmckay/bprp_mae/final_model/pt_testing/10M_pretrain_data0622.h5'
+  valid_keys: ['sslset11_part0','sslset14_part0','sslset2_part0','sslset5_part0','sslset20_part0']
   feature_cols: ['W1','W2','G','BP','RP','bp_1','bp_2','bp_3','bp_4','bp_5','bp_6','bp_7','bp_8','bp_9',
                  'bp_10','bp_11','bp_12','bp_13','bp_14','bp_15','bp_16','bp_17','bp_18','bp_19','bp_20',
                  'bp_21','bp_22','bp_23','bp_24','bp_25','bp_26','bp_27','bp_28','bp_29','bp_30','bp_31',
@@ -14,22 +15,19 @@ data:
                  'rp_55','U_SMSS','V_SMSS','G_SMSS','R_SMSS','I_SMSS','Z_SMSS','U_SDSS','G_SDSS','R_SDSS',
                  'I_SDSS','Z_SDSS','G_PS1','R_PS1','I_PS1','Z_PS1','Y_PS1','J','H','KS','PARALLAX','EBV',
                  'pmra','pmdec','RA','DEC']
-  error_cols: ['E_W1','E_W2','E_G','E_BP','E_RP','e_bp_1','e_bp_2','e_bp_3','e_bp_4','e_bp_5','e_bp_6',
-               'e_bp_7','e_bp_8','e_bp_9','e_bp_10','e_bp_11','e_bp_12','e_bp_13','e_bp_14','e_bp_15',
-               'e_bp_16','e_bp_17','e_bp_18','e_bp_19','e_bp_20','e_bp_21','e_bp_22','e_bp_23','e_bp_24',
-               'e_bp_25','e_bp_26','e_bp_27','e_bp_28','e_bp_29','e_bp_30','e_bp_31','e_bp_32','e_bp_33',
-               'e_bp_34','e_bp_35','e_bp_36','e_bp_37','e_bp_38','e_bp_39','e_bp_40','e_bp_41','e_bp_42',
-               'e_bp_43','e_bp_44','e_bp_45','e_bp_46','e_bp_47','e_bp_48','e_bp_49','e_bp_50','e_bp_51',
-               'e_bp_52','e_bp_53','e_bp_54','e_bp_55','e_rp_1','e_rp_2','e_rp_3','e_rp_4','e_rp_5',
-               'e_rp_6','e_rp_7','e_rp_8','e_rp_9','e_rp_10','e_rp_11','e_rp_12','e_rp_13','e_rp_14',
-               'e_rp_15','e_rp_16','e_rp_17','e_rp_18','e_rp_19','e_rp_20','e_rp_21','e_rp_22','e_rp_23',
-               'e_rp_24','e_rp_25','e_rp_26','e_rp_27','e_rp_28','e_rp_29','e_rp_30','e_rp_31','e_rp_32',
-               'e_rp_33','e_rp_34','e_rp_35','e_rp_36','e_rp_37','e_rp_38','e_rp_39','e_rp_40','e_rp_41',
-               'e_rp_42','e_rp_43','e_rp_44','e_rp_45','e_rp_46','e_rp_47','e_rp_48','e_rp_49','e_rp_50',
-               'e_rp_51','e_rp_52','e_rp_53','e_rp_54','e_rp_55','E_U_SMSS','E_V_SMSS','E_G_SMSS',
-               'E_R_SMSS','E_I_SMSS','E_Z_SMSS','E_U_SDSS','E_G_SDSS','E_R_SDSS','E_I_SDSS','E_Z_SDSS',
-               'E_G_PS1','E_R_PS1','E_I_PS1','E_Z_PS1','E_Y_PS1','E_J','E_H','E_KS','E_PARALLAX','E_EBV',
-               'e_pmra','e_pmdec','E_RA','E_DEC']
+  error_cols: ['W1','W2','G','BP','RP','bp_1','bp_2','bp_3','bp_4','bp_5','bp_6','bp_7','bp_8','bp_9',
+                 'bp_10','bp_11','bp_12','bp_13','bp_14','bp_15','bp_16','bp_17','bp_18','bp_19','bp_20',
+                 'bp_21','bp_22','bp_23','bp_24','bp_25','bp_26','bp_27','bp_28','bp_29','bp_30','bp_31',
+                 'bp_32','bp_33','bp_34','bp_35','bp_36','bp_37','bp_38','bp_39','bp_40','bp_41','bp_42',
+                 'bp_43','bp_44','bp_45','bp_46','bp_47','bp_48','bp_49','bp_50','bp_51','bp_52','bp_53',
+                 'bp_54','bp_55','rp_1','rp_2','rp_3','rp_4','rp_5','rp_6','rp_7','rp_8','rp_9','rp_10',
+                 'rp_11','rp_12','rp_13','rp_14','rp_15','rp_16','rp_17','rp_18','rp_19','rp_20','rp_21',
+                 'rp_22','rp_23','rp_24','rp_25','rp_26','rp_27','rp_28','rp_29','rp_30','rp_31','rp_32',
+                 'rp_33','rp_34','rp_35','rp_36','rp_37','rp_38','rp_39','rp_40','rp_41','rp_42','rp_43',
+                 'rp_44','rp_45','rp_46','rp_47','rp_48','rp_49','rp_50','rp_51','rp_52','rp_53','rp_54',
+                 'rp_55','U_SMSS','V_SMSS','G_SMSS','R_SMSS','I_SMSS','Z_SMSS','U_SDSS','G_SDSS','R_SDSS',
+                 'I_SDSS','Z_SDSS','G_PS1','R_PS1','I_PS1','Z_PS1','Y_PS1','J','H','KS','PARALLAX','EBV',
+                 'pmra','pmdec','RA','DEC']
   recon_cols: ['W1','W2','G','BP','RP','bp_1','bp_2','bp_3','bp_4','bp_5','bp_6','bp_7','bp_8','bp_9',
                'bp_10','bp_11','bp_12','bp_13','bp_14','bp_15','bp_16','bp_17','bp_18','bp_19','bp_20',
                'bp_21','bp_22','bp_23','bp_24','bp_25','bp_26','bp_27','bp_28','bp_29','bp_30','bp_31',
@@ -61,6 +59,6 @@ training:
   epochs: 100
 
 saving:
-  model_str: 'masked_stellar_autoencoder_10M.pth'
+  model_str: '/arc/home/aydanmckay/masked_stellar_autoencoder_10M.pth'
   log_file: 'pretrain_msa_100_epoch.log'
   checkpoint_interval: 2
