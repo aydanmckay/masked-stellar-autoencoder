@@ -21,7 +21,7 @@ import yaml
 
 from sklearn.preprocessing import StandardScaler, RobustScaler
 
-from blocks import TabResnet
+from .blocks import TabResnet
 
 class MaskedGaussianNLLLoss(nn.Module):
     def __init__(self, eps=1e-6, reduction='mean'):
@@ -644,7 +644,7 @@ class TabResnetWrapper(BaseEstimator):
             loss_div = 0
             val_loss = 0
             for key in pbar:
-                X_val, eX_val = self._load_data(key
+                X_val, eX_val = self._load_data(key)
     
                 # Create DataLoader for mini-batching validation data
                 val_loader = DataLoader(TensorDataset(X_val, eX_val), batch_size=mini_batch, shuffle=False)
