@@ -502,6 +502,11 @@ class TabResnetWrapper(BaseEstimator):
             return np.array([np.nan if v in {b'', ''} else float(v) for v in col_data], dtype=np.float32)
         return col_data.astype(np.float32)  # Convert other numeric types to float3
 
+    def init_weights_gelu(self, m):
+        if isinstance(m, (nn.Linear, nn.Conv2d)):
+            nn.init.xavier_normal_(m.weight)
+            if m.bias is not None:
+                nn.init.constant_(m.bias, 0)
     
     def pretrain_hdf(self, train_keys, num_epochs=10, val_keys=None, ft_stuff=None, test_stuff=None, mini_batch=32):
         """
