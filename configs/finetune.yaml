@@ -82,4 +82,4 @@ finetuning:
 saving:
   model_str: 'masked_stellar_autoencoder_ft_10M.pth'
   log_file: 'finetune_msa_100_epoch.log'
-  checkpoint_interval: 1
+  checkpoint_interval: 50
