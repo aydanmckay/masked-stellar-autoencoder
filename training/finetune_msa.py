@@ -6,7 +6,13 @@ from sklearn.model_selection import train_test_split
 import numpy as np
 from astropy.table import Table
 import pandas as pd
+import random
+import os
+import sys
 
+# Add the repo root to Python path
+repo_root = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+sys.path.insert(0, repo_root)
 
 from models.model import make_model, TabResnetWrapper
 
@@ -21,18 +27,26 @@ def main():
     with open(args.config, "r") as f:
         config = yaml.safe_load(f)
 
-    seeds = np.random.randint(0, 1000, size=100).tolist()
-
-    featurescaler = RobustScaler()
+    if config['training']['ensemble']:
+        seeds = np.random.randint(0, 1000, size=100).tolist()
+    else:
+        seeds = [42]
 
     # loading the finetuning dataset
-    data = Table.read('/arc/projects/k-pop/catalogues/andrae2023/ftset_spec_ga_0602_realmags.fits').to_pandas()
+    data = Table.read(config['data']['ft_datafile']).to_pandas()
     errordata = data.copy()
-    errordata = errordata[errorcols]
+
+    cols = config['data']['feature_cols']
+    error_cols = config['data']['error_cols']
+
+    data = data[cols]
+    errordata = errordata[error_cols]
     errordata = errordata.fillna(errordata.max())
 
     trainset, validset, etrainset, evalidset = train_test_split(data.to_numpy(), errordata.to_numpy(), test_size=0.2, random_state=42)
     validset, testset, evalidset, etestset = train_test_split(validset, evalidset, test_size=0.33, random_state=42)
+
+    # assuming that the layout of the file is label, label error, ..., features
     target_train = trainset[:, :10]
     trainset = trainset[:, 10:]
     target_valid = validset[:, :10]
@@ -69,11 +83,6 @@ def main():
     velabel4 = target_valid[:, 7] / scaler4.scale_
     velabel5 = target_valid[:, 9] / scaler5.scale_
 
-    # ---------------------------------------------------------------------
-    with open('/arc/home/aydanmckay/bprp_mae/final_model/ensembling/ft-sweep-params-modified-0602.yaml', 'r') as file:
-        config = yaml.safe_load(file)
-    # ---------------------------------------------------------------------
-
     scaler6 = StandardScaler()
     label6 = scaler6.fit_transform(trainset[:, -4].reshape(-1, 1))
     elabel6 = etrainset[:, -4] / scaler6.scale_
@@ -89,7 +98,7 @@ def main():
                                 elabel6.reshape(-1, 1)], axis=1)
     scalers = [scaler1, scaler2, scaler3, scaler4, scaler5, scaler6]
     target_set = np.concatenate([target_set, testset[:, -4].reshape(-1, 1)], axis=1)
-    labels = ['teff', 'logg', 'fe_h', 'alpha', 'age', 'parallax']
+    labels = ['teff', 'logg', 'fe_h', 'alpha', 'age', 'parallax'] # part of the config
     vlabelled_set = np.concatenate([vlabel1, vlabel2, vlabel3, vlabel4, vlabel5, vlabel6], axis=1)
     e_vlabelled_set = np.concatenate([velabel1.reshape(-1, 1), 
                                 velabel2.reshape(-1, 1),
@@ -98,8 +107,9 @@ def main():
                                 velabel5.reshape(-1, 1),
                                 velabel6.reshape(-1, 1)], axis=1)
 
-    if config['refit']:
-        featurescaler.fit(trainset)
+    featurescaler = RobustScaler()
+    featurescaler.fit(trainset)
+    
     trainset = featurescaler.transform(trainset)
     validset = featurescaler.transform(validset)
     testset = featurescaler.transform(testset)
@@ -114,43 +124,87 @@ def main():
 
         random.seed(seed)
         torch.manual_seed(seed)
-        
-        continuous_cols = 140 # fixed for now
-        model = modelfile.TabResnetSingleEncoder(
-            continuous_cols=continuous_cols,
-            blocks_dims=blocks_dims,
-            output_cols=135,
-            activ=cactivation,
-            d_embedding=cd_embedding,
-            norm=cnormalization,
-            do=0.,
+
+        blocks_dims = config['model']['layer_dims']
+        pt_activ = config['model']['pt_activ_func']
+        d_embed = config['model']['rtdl_embed']
+        norm = config['model']['norm']
+    
+        recon_cols = config['data']['recon_cols']
+    
+        model = make_model(
+            len(cols),
+            blocks_dims,
+            len(recon_cols),
+            pt_activ,
+            d_embed,
+            norm,
         )
 
-        # model.load_state_dict(torch.load('/arc/home/aydanmckay/bprp_mae/.model_instances/checkpoint_60_fullmodelrealmags0605.pth'))
+        model.load_state_dict(torch.load(config['model']['saved_weights'], map_location=torch.device))
+    
+        xp_ratio = config['training']['xp_masking_ratio']
+        m_ratio = config['training']['m_masking_ratio']
+        lr = config['training']['lr']
+        wd = config['training']['weight_decay']
+        lasso = config['training']['lasso']
+        opt = config['training']['optimizer']
+        lf = config['training']['loss_fn']
+        
+        ft_save_file = config['saving']['model_str']
+        ft_log_file = config['saving']['log_file']
+        ci = config['saving']['checkpoint_interval']
+
+        pretrain_file = config['data']['datafile']
 
         # Initialize the pretraining wrapper
-        pretrain_wrapper = TabResnetWrapper(
+        wrapper = TabResnetWrapper(
             model=model,
-            datafile=None,
+            datafile=pretrain_file,
             scaler=featurescaler,
-            xp_masking_ratio=0.9,
-            m_masking_ratio=0.6,
-            num_classes=5,
+            feature_cols=cols,
+            error_cols=error_cols,
+            recon_cols=recon_cols,
+            xp_masking_ratio=xp_ratio,
+            m_masking_ratio=m_ratio,
             latent_size=blocks_dims[-1],
-            lr = clearning_rate,
-            optimizer = coptimizer,
-            wd=cweight_decay,
-            lasso=classo,
-            lf=closs_fn,
+            lr=lr,
+            optimizer=opt,
+            wd=wd,
+            lasso=lasso,
+            lf=lf,
+            ft_save_str=ft_save_file,
+            ft_log_file=ft_log_file,
+            checkpoint_interval=ci,
         )
 
-        pretrain_wrapper.fit(trainset,etrainset,labelled_set,e_y_train=e_labelled_set,X_val=validset,eX_val=evalidset,
-                            y_val=vlabelled_set,e_y_val=e_vlabelled_set,num_epochs=101,mini_batch=512,linearprobe=False, 
-                            maskft=True,multitask=True,rncloss=False,ftlr=1e-4,ftopt='adamw',
-                            ftact='relu',ftl2=0.0,ftlf='quantile',ftdim='test',
-                            ftlabeldim=6,traintype='normal',pert_features=True,feature_seed=seed,
-                            pert_labels=False,ensemblepath='quantilemodel_nodo_'+str(seed),
-                            )
+        wrapper.fit(
+            trainset,
+            etrainset,
+            labelled_set,
+            e_y_train=e_labelled_set,
+            X_val=validset, 
+            eX_val=evalidset,
+            y_val=vlabelledset,
+            e_y_val=e_vlabelled_set,
+            num_epochs=101, # needs to all be part of the config
+            mini_batch=512, 
+            linearprobe=False, 
+            maskft=True,
+            multitask=True,
+            rncloss=False,
+            ftlr=1e-4,
+            ftopt='adamw',
+            ftact='relu',
+            ftl2=0.0,
+            ftlf='quantile',
+            ftlabeldim=6,
+            traintype='normal',
+            pert_features=True,
+            pert_labels=False,
+            feature_seed=42,
+            ensemblepath=None
+        )
 
 if __name__ == '__main__':
     main()
