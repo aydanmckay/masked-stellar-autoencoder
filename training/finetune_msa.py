@@ -1,6 +1,7 @@
 import yaml
 import h5py
 import argparse
+import torch
 from sklearn.preprocessing import RobustScaler, StandardScaler
 from sklearn.model_selection import train_test_split
 import numpy as np
@@ -27,19 +28,20 @@ def main():
     with open(args.config, "r") as f:
         config = yaml.safe_load(f)
 
-    if config['training']['ensemble']:
+    if config['finetuning']['ensemble']:
         seeds = np.random.randint(0, 1000, size=100).tolist()
     else:
-        seeds = [42]
+        seeds = [config['finetuning']['seed']]
 
     # loading the finetuning dataset
     data = Table.read(config['data']['ft_datafile']).to_pandas()
     errordata = data.copy()
 
     cols = config['data']['feature_cols']
+    classes = config['data']['classes']
     error_cols = config['data']['error_cols']
 
-    data = data[cols]
+    data = data[classes+cols]
     errordata = errordata[error_cols]
     errordata = errordata.fillna(errordata.max())
 
@@ -47,65 +49,59 @@ def main():
     validset, testset, evalidset, etestset = train_test_split(validset, evalidset, test_size=0.33, random_state=42)
 
     # assuming that the layout of the file is label, label error, ..., features
-    target_train = trainset[:, :10]
-    trainset = trainset[:, 10:]
-    target_valid = validset[:, :10]
-    validset = validset[:, 10:]
-    target_test = testset[:, :10]
-    testset = testset[:, 10:]
+    num_classes = len(classes)
+    
+    target_train = trainset[:, :num_classes]
+    trainset = trainset[:, num_classes:]
+    target_valid = validset[:, :num_classes]
+    validset = validset[:, num_classes:]
+    target_test = testset[:, :num_classes]
+    testset = testset[:, num_classes:]
 
     # scaling the targets (individually in case of single task finetuning) and features
-    scaler1 = StandardScaler()
-    scaler2 = StandardScaler()
-    scaler3 = StandardScaler()
-    scaler4 = StandardScaler()
-    scaler5 = StandardScaler()
-    label1 = scaler1.fit_transform(target_train[:, 0].reshape(-1, 1))
-    label2 = scaler2.fit_transform(target_train[:, 2].reshape(-1, 1))
-    label3 = scaler3.fit_transform(target_train[:, 4].reshape(-1, 1))
-    label4 = scaler4.fit_transform(target_train[:, 6].reshape(-1, 1))
-    label5 = scaler5.fit_transform(target_train[:, 8].reshape(-1, 1))
-    elabel1 = target_train[:, 1] / scaler1.scale_
-    elabel2 = target_train[:, 3] / scaler2.scale_
-    elabel3 = target_train[:, 5] / scaler3.scale_
-    elabel4 = target_train[:, 7] / scaler4.scale_
-    elabel5 = target_train[:, 9] / scaler5.scale_
-    target_set = target_test[:, [0, 2, 4, 6, 8]]
+    scalers = [StandardScaler() for _ in range(int(num_classes/2))]
+    labelled_set = []
+    e_labelled_set = []
+    vlabelled_set = []
+    e_vlabelled_set = []
+    
+    for i in range(int(num_classes/2)):
+        labelled_set.append(scalers[i].fit_transform(target_train[:, i*2].reshape(-1, 1)))
+        elabel = target_train[:, i*2+1] / scalers[i].scale_
+        e_labelled_set.append(elabel.reshape(-1, 1))
+        
+        vlabelled_set.append(scalers[i].transform(target_valid[:, i*2].reshape(-1, 1)))
+        velabel = target_valid[:, i*2+1] / scalers[i].scale_
+        e_vlabelled_set.append(velabel.reshape(-1, 1))
+        
 
-    vlabel1 = scaler1.transform(target_valid[:, 0].reshape(-1, 1))
-    vlabel2 = scaler2.transform(target_valid[:, 2].reshape(-1, 1))
-    vlabel3 = scaler3.transform(target_valid[:, 4].reshape(-1, 1))
-    vlabel4 = scaler4.transform(target_valid[:, 6].reshape(-1, 1))
-    vlabel5 = scaler5.transform(target_valid[:, 8].reshape(-1, 1))
-    velabel1 = target_valid[:, 1] / scaler1.scale_
-    velabel2 = target_valid[:, 3] / scaler2.scale_
-    velabel3 = target_valid[:, 5] / scaler3.scale_
-    velabel4 = target_valid[:, 7] / scaler4.scale_
-    velabel5 = target_valid[:, 9] / scaler5.scale_
+    target_set = target_test[:, [i for i in range(num_classes) if i % 2 == 0]]
 
-    scaler6 = StandardScaler()
-    label6 = scaler6.fit_transform(trainset[:, -4].reshape(-1, 1))
-    elabel6 = etrainset[:, -4] / scaler6.scale_
-    vlabel6 = scaler6.transform(validset[:, -4].reshape(-1, 1))
-    velabel6 = evalidset[:, -4] / scaler6.scale_
+    pos = cols.index("PARALLAX")
+    
+    scaler = StandardScaler()
+    label = scaler.fit_transform(trainset[:, pos].reshape(-1, 1))
+    elabel = etrainset[:, pos] / scaler.scale_
+    vlabel = scaler.transform(validset[:, pos].reshape(-1, 1))
+    velabel = evalidset[:, pos] / scaler.scale_
 
-    labelled_set = np.concatenate([label1, label2, label3, label4, label5, label6], axis=1)
-    e_labelled_set = np.concatenate([elabel1.reshape(-1, 1),
-                                elabel2.reshape(-1, 1), 
-                                elabel3.reshape(-1, 1), 
-                                elabel4.reshape(-1, 1), 
-                                elabel5.reshape(-1, 1),
-                                elabel6.reshape(-1, 1)], axis=1)
-    scalers = [scaler1, scaler2, scaler3, scaler4, scaler5, scaler6]
-    target_set = np.concatenate([target_set, testset[:, -4].reshape(-1, 1)], axis=1)
-    labels = ['teff', 'logg', 'fe_h', 'alpha', 'age', 'parallax'] # part of the config
-    vlabelled_set = np.concatenate([vlabel1, vlabel2, vlabel3, vlabel4, vlabel5, vlabel6], axis=1)
-    e_vlabelled_set = np.concatenate([velabel1.reshape(-1, 1), 
-                                velabel2.reshape(-1, 1),
-                                velabel3.reshape(-1, 1),
-                                velabel4.reshape(-1, 1),
-                                velabel5.reshape(-1, 1),
-                                velabel6.reshape(-1, 1)], axis=1)
+    labelled_set.append(label)
+    labelled_set = np.concatenate(labelled_set, axis=1)
+
+    e_labelled_set.append(elabel.reshape(-1, 1))
+    e_labelled_set = np.concatenate(e_labelled_set, axis=1)
+
+    scalers.append(scaler)
+
+    target_set = np.concatenate([target_set, testset[:, pos].reshape(-1, 1)], axis=1)
+    
+    labels = [i for i in range(num_classes) if i % 2 == 0] + ['parallax']
+
+    vlabelled_set.append(vlabel)
+    vlabelled_set = np.concatenate(vlabelled_set, axis=1)
+
+    e_vlabelled_set.append(velabel.reshape(-1, 1))
+    e_vlabelled_set = np.concatenate(e_vlabelled_set, axis=1)
 
     featurescaler = RobustScaler()
     featurescaler.fit(trainset)
@@ -129,7 +125,7 @@ def main():
         pt_activ = config['model']['pt_activ_func']
         d_embed = config['model']['rtdl_embed']
         norm = config['model']['norm']
-    
+
         recon_cols = config['data']['recon_cols']
     
         model = make_model(
@@ -141,7 +137,7 @@ def main():
             norm,
         )
 
-        model.load_state_dict(torch.load(config['model']['saved_weights'], map_location=torch.device))
+        model.load_state_dict(torch.load(config['model']['saved_weights'], map_location=torch.device('cuda' if torch.cuda.is_available() else 'cpu')))
     
         xp_ratio = config['training']['xp_masking_ratio']
         m_ratio = config['training']['m_masking_ratio']
@@ -185,25 +181,24 @@ def main():
             e_y_train=e_labelled_set,
             X_val=validset, 
             eX_val=evalidset,
-            y_val=vlabelledset,
+            y_val=vlabelled_set,
             e_y_val=e_vlabelled_set,
-            num_epochs=101, # needs to all be part of the config
-            mini_batch=512, 
-            linearprobe=False, 
-            maskft=True,
-            multitask=True,
-            rncloss=False,
-            ftlr=1e-4,
-            ftopt='adamw',
-            ftact='relu',
-            ftl2=0.0,
-            ftlf='quantile',
-            ftlabeldim=6,
-            traintype='normal',
-            pert_features=True,
-            pert_labels=False,
-            feature_seed=42,
-            ensemblepath=None
+            num_epochs=config['finetuning']['num_epochs'], # needs to all be part of the config
+            mini_batch=config['finetuning']['mini_batch'], 
+            linearprobe=config['finetuning']['linearprobe'], 
+            maskft=config['finetuning']['mask'],
+            multitask=config['finetuning']['multitask'],
+            rncloss=config['finetuning']['rncloss'],
+            ftlr=config['finetuning']['lr'],
+            ftopt=config['finetuning']['opt'],
+            ftact=config['finetuning']['activ'],
+            ftl2=config['finetuning']['l2'],
+            ftlf=config['finetuning']['lf'],
+            ftlabeldim=len(labels),
+            pert_features=config['finetuning']['pert_features'],
+            pert_labels=config['finetuning']['pert_labels'],
+            feature_seed=config['finetuning']['pert_seed'],
+            ensemblepath=config['finetuning']['ensemble_path']
         )
 
 if __name__ == '__main__':
