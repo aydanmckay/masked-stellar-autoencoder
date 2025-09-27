@@ -663,7 +663,7 @@ class TabResnetWrapper(BaseEstimator):
     
                     # Compute validation loss
                     # not counting the parallax and ebv
-                    batch_loss = self.loss_fn(X_batch[:, :self.diff], X_reconstructed, nanmask[:, :self.diff], eX_batch)
+                    batch_loss = self.loss_fn(X_batch[:, :-self.diff], X_reconstructed, nanmask[:, :-self.diff], eX_batch)
                     
                     val_loss += batch_loss.item()
                 loss_div += len(val_loader)
@@ -833,7 +833,7 @@ class TabResnetWrapper(BaseEstimator):
 
                 if multitask:
                     X_reconstructed, _ = self.model(X_masked)
-                    loss += self.loss_fn(X_batch[:, :self.diff], X_reconstructed, nanmask[:, :self.diff], eX_batch[:, :self.diff])
+                    loss += self.loss_fn(X_batch[:, :-self.diff], X_reconstructed, nanmask[:, :-self.diff], eX_batch[:, :-self.diff])
 
                 if rncloss:
                     features = torch.stack((y_pred, y_pred.clone()), dim=1)  # [bs, 2, feat_dim]
@@ -954,7 +954,7 @@ class TabResnetWrapper(BaseEstimator):
 
                 if multitask:
                     X_reconstructed, _ = self.model(X_masked)
-                    loss += self.loss_fn(X_batch[:, :self.diff], X_reconstructed, nanmask[:, :self.diff], eX_batch[:, :self.diff])
+                    loss += self.loss_fn(X_batch[:, :-self.diff], X_reconstructed, nanmask[:, :-self.diff], eX_batch[:, :-self.diff])
 
                 if rncloss:
                     features = torch.stack((y_pred, y_pred.clone()), dim=1)  # [bs, 2, feat_dim]
