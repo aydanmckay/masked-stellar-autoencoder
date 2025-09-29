@@ -86,7 +86,7 @@ Evaluation is performed in notebooks in notebooks/
 ---
 
 ## Citation
-If you use this project in your research, please cite:
+If you use this model, or the predictions made by this model, in your research, please cite:
 ```bash
 @article{mckay2025msa,
   title={Extending the Reach of Gaia with Masked Stellar Autoencoders},
