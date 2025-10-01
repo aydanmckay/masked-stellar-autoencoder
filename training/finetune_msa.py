@@ -77,7 +77,10 @@ def main():
 
     target_set = target_test[:, [i for i in range(num_classes) if i % 2 == 0]]
 
-    pos = cols.index("PARALLAX")
+    try:
+        pos = cols.index("PARALLAX")
+    except ValueError:
+        raise ValueError("PARALLAX column not found in feature columns")
     
     scaler = StandardScaler()
     label = scaler.fit_transform(trainset[:, pos].reshape(-1, 1))

@@ -18,12 +18,17 @@ class ResBlock(nn.Module):
             self.normal = nn.BatchNorm1d(out_features)
         elif norm == 'layer':
             self.normal = nn.LayerNorm(out_features)
+        else:
+            raise ValueError(f"Unsupported norm type: {norm}. Use 'batch' or 'layer'")
+        
         if activ == 'elu':
             self.activ = nn.ELU(inplace=True)
         elif activ == 'gelu':
             self.activ = nn.GELU()
         elif activ == 'relu':
             self.activ = nn.ReLU(inplace=True)
+        else:
+            raise ValueError(f"Unsupported activation type: {activ}. Use 'elu', 'gelu', or 'relu'")
         self.dp = nn.Dropout(p=dropout_prob)
         self.lin2 = nn.Linear(out_features, out_features, bias=False)
         
@@ -75,8 +80,12 @@ class DenseResnet(nn.Module):
                 else:
                     layers.append(ResBlock(input_dim, dim, activ=activ, norm=norm))
             else:
-                for _ in range(num_blocks_per_layer):
-                    layers.append(ResBlock(blocks_dims[i-1], dim, activ=activ, norm=norm))
+                input_dim_for_block = blocks_dims[i-1] if _ == 0 else dim
+                for j in range(num_blocks_per_layer):
+                    if j == 0:
+                        layers.append(ResBlock(blocks_dims[i-1], dim, activ=activ, norm=norm))
+                    else:
+                        layers.append(ResBlock(dim, dim, activ=activ, norm=norm))
                     
         self.dense_resnet = nn.Sequential(*layers)
 

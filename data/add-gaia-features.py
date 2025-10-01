@@ -7,7 +7,10 @@ import tqdm
 from natsort import natsorted
 import time
 
-file = h5py.File('pretrain_dataset_incomplete.h5')
+try:
+    file = h5py.File('pretrain_dataset_incomplete.h5', 'r')
+except (FileNotFoundError, OSError) as e:
+    raise FileNotFoundError(f"Could not open pretrain_dataset_incomplete.h5: {e}")
 keylist = list(file.keys())
 source_files = np.sort(glob.glob('gaia/GaiaSource/*'))
 
@@ -132,6 +135,8 @@ for it, dataset_name in pbar:
             break
 
         source_file_num += 1
+        if source_file_num >= len(source_files):
+            raise IndexError(f"Ran out of source files. Only {len(source_files)} files available but needed more for matching.")
 
     # After processing all files for a dataset, combine matched records
     if matched_records:
