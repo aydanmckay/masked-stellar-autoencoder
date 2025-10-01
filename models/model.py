@@ -18,6 +18,7 @@ import tqdm
 import logging
 import wandb
 import yaml
+import math
 
 from sklearn.preprocessing import StandardScaler, RobustScaler
 
@@ -114,6 +115,29 @@ class MaskedMSELoss(nn.Module):
         masked_input = input[mask]
         masked_target = target[mask]
         masked_error = (masked_input - masked_target) ** 2
+
+        if masked_error.numel() == 0:
+            return torch.tensor(0.0, device=input.device, requires_grad=True)
+        if self.reduction == 'mean':
+            return masked_error.mean()
+        elif self.reduction == 'sum':
+            return masked_error.sum()
+        else:
+            return masked_error
+
+class MaskedMAELoss(nn.Module):
+    def __init__(self, reduction='mean'):
+        super().__init__()
+        self.reduction = reduction
+
+    def forward(self, target, input):
+        # Create a mask for non-NaN targets
+        mask = ~torch.isnan(target)
+        
+        # Compute absolute error only where target is not NaN
+        masked_input = input[mask]
+        masked_target = target[mask]
+        masked_error = torch.abs(masked_input - masked_target)
 
         if masked_error.numel() == 0:
             return torch.tensor(0.0, device=input.device, requires_grad=True)
@@ -663,7 +687,7 @@ class TabResnetWrapper(BaseEstimator):
     
                     # Compute validation loss
                     # not counting the parallax and ebv
-                    batch_loss = self.loss_fn(X_batch[:, :-self.diff], X_reconstructed, nanmask[:, :-self.diff], eX_batch)
+                    batch_loss = self.loss_fn(X_batch[:, :-self.diff], X_reconstructed, nanmask[:, :-self.diff], eX_batch[:, :-self.diff])
                     
                     val_loss += batch_loss.item()
                 loss_div += len(val_loader)
