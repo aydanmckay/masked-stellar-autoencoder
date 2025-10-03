@@ -7,13 +7,25 @@ import random
 
 row_limit = 2_000_000  # Maximum number of rows per dataset
 filelist = glob.glob('partialtable*.fits')
+if not filelist:
+    raise FileNotFoundError("No FITS files found matching pattern 'partialtable*.fits'")
 random.shuffle(filelist)
 
 progress_bar = tqdm.tqdm(filelist, total=len(filelist))
 
 for file in progress_bar:
-    with fits.open(file, memmap=True) as hdul:
-        data = hdul[1].data # Convert FITS data to NumPy array
+    try:
+        with fits.open(file, memmap=True) as hdul:
+            if len(hdul) < 2:
+                print(f"Warning: {file} has insufficient HDUs, skipping")
+                continue
+            data = hdul[1].data # Convert FITS data to NumPy array
+            if data is None or len(data) == 0:
+                print(f"Warning: {file} contains no data, skipping")
+                continue
+    except Exception as e:
+        print(f"Error processing {file}: {e}, skipping")
+        continue
 
         dataset_base_name = 'sslset' + file.split('.')[0].split('ll')[-1]
 

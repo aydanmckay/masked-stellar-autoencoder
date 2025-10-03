@@ -18,6 +18,7 @@ import tqdm
 import logging
 import wandb
 import yaml
+import math
 
 from sklearn.preprocessing import StandardScaler, RobustScaler
 
@@ -124,6 +125,29 @@ class MaskedMSELoss(nn.Module):
         else:
             return masked_error
 
+class MaskedMAELoss(nn.Module):
+    def __init__(self, reduction='mean'):
+        super().__init__()
+        self.reduction = reduction
+
+    def forward(self, target, input):
+        # Create a mask for non-NaN targets
+        mask = ~torch.isnan(target)
+        
+        # Compute absolute error only where target is not NaN
+        masked_input = input[mask]
+        masked_target = target[mask]
+        masked_error = torch.abs(masked_input - masked_target)
+
+        if masked_error.numel() == 0:
+            return torch.tensor(0.0, device=input.device, requires_grad=True)
+        if self.reduction == 'mean':
+            return masked_error.mean()
+        elif self.reduction == 'sum':
+            return masked_error.sum()
+        else:
+            return masked_error
+
 class LabelDifference(nn.Module):
     '''
     @inproceedings{zha2023rank,
@@ -141,7 +165,7 @@ class LabelDifference(nn.Module):
         # labels: [bs, label_dim]
         # output: [bs, bs]
         if self.distance_type == 'l1':
-            return torch.abs(labels[:, None, :] - labels[None, :, :]).sum(dim=-1)
+            return torch.cdist(labels, labels, p=1)
         else:
             raise ValueError(self.distance_type)
 
@@ -162,7 +186,7 @@ class FeatureSimilarity(nn.Module):
         # labels: [bs, feat_dim]
         # output: [bs, bs]
         if self.similarity_type == 'l2':
-            return - (features[:, None, :] - features[None, :, :]).norm(2, dim=-1)
+            return -torch.cdist(features, features, p=2)
         else:
             raise ValueError(self.similarity_type)
 
@@ -299,8 +323,12 @@ class EncoderDecoderLoss(nn.Module):
         elif self.cost == 'mae':
             reconstruction_errors = abs(errors)
         elif self.cost == 'wmse':
+            if w is None:
+                raise ValueError("Weight tensor w is required for wmse loss but got None")
             reconstruction_errors = w * (errors ** 2)
         elif self.cost == 'wmae':
+            if w is None:
+                raise ValueError("Weight tensor w is required for wmae loss but got None")
             reconstruction_errors = w * abs(errors)
 
         # features_loss = torch.matmul(reconstruction_errors, 1 / x_true_stds)
@@ -496,11 +524,15 @@ class TabResnetWrapper(BaseEstimator):
         
         return torch.Tensor(X).to(self.device), torch.Tensor(eX).to(self.device)
     
-    def _clean_column(self, col_data):
+    @staticmethod
+    def _clean_column(col, col_data):
         '''Convert byte strings to NaN and stack columns'''
-        if col_data.dtype.kind in {'S', 'U'}:  # If the column contains byte strings or unicode
-            return np.array([np.nan if v in {b'', ''} else float(v) for v in col_data], dtype=np.float32)
-        return col_data.astype(np.float32)  # Convert other numeric types to float3
+        try:
+            if col_data.dtype.kind in {'S', 'U'}:  # If the column contains byte strings or unicode
+                return np.array([np.nan if v in {b'', ''} else float(v) for v in col_data], dtype=np.float32)
+            return col_data.astype(np.float32)  # Convert other numeric types to float32
+        except (ValueError, TypeError) as e:
+            raise ValueError(f"Error processing column {col}: {e}")
 
     def init_weights_gelu(self, m):
         if isinstance(m, (nn.Linear, nn.Conv2d)):
@@ -663,7 +695,7 @@ class TabResnetWrapper(BaseEstimator):
     
                     # Compute validation loss
                     # not counting the parallax and ebv
-                    batch_loss = self.loss_fn(X_batch[:, :-self.diff], X_reconstructed, nanmask[:, :-self.diff], eX_batch)
+                    batch_loss = self.loss_fn(X_batch[:, :-self.diff], X_reconstructed, nanmask[:, :-self.diff], eX_batch[:, :-self.diff])
                     
                     val_loss += batch_loss.item()
                 loss_div += len(val_loader)
@@ -927,7 +959,7 @@ class TabResnetWrapper(BaseEstimator):
                 if maskft:
                     X_masked, mask, nanmask = self._apply_mask(X_batch)
                 else:
-                    X_masked = X_batch.copy()
+                    X_masked = X_batch.clone()
 
                 if linearprobe:
                     # Forward pass (classification output is used for fitting)
