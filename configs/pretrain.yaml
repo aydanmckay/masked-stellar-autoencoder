@@ -46,6 +46,7 @@ model:
   pt_activ_func: 'elu'
   norm: 'layer'
   rtdl_embed: 16
+  # decoder_dims: [256, 512, 1024]  # Optional: asymmetric decoder (default: mirrors encoder)
 
 training:
   xp_masking_ratio: 0.9
@@ -54,9 +55,11 @@ training:
   weight_decay: 0.00001
   lasso: 0
   optimizer: 'adamw'
-  loss_fn: 'mae'
+  loss_fn: 'mae'  # Options: 'mse', 'mae', 'wmse' (error-weighted MSE), 'wmae'
   mini_batch_size: 1024
   epochs: 100
+  # pert_features: false  # Optional: add Gaussian noise augmentation scaled by errors (default: false)
+  # pert_scale: 1.0  # Optional: noise scale factor (default: 1.0)
 
 saving:
   model_str: '/arc/home/aydanmckay/masked_stellar_autoencoder_10M.pth'

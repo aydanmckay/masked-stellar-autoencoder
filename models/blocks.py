@@ -107,14 +107,16 @@ class TabResnetEncoder(nn.Module):
         return self.encoder(x)
 
 class TabResnet(nn.Module):
-    def __init__(self, continuous_cols, blocks_dims, output_cols=None, d_embedding=8, activ='elu', norm='batch'):
+    def __init__(self, continuous_cols, blocks_dims, output_cols=None, d_embedding=8, activ='elu', norm='batch', decoder_dims=None):
 
         super(TabResnet, self).__init__()
 
         self.encoder = TabResnetEncoder(continuous_cols=continuous_cols, blocks_dims=blocks_dims, d_embedding=d_embedding, activ=activ, pe_bool=True, norm=norm)
 
-        # mirrored
-        self.decoder = DenseResnet(input_dim=blocks_dims[-1], blocks_dims=blocks_dims[::-1], d_embedding=d_embedding, activ=activ, pe=False, norm=norm)
+        # Use asymmetric decoder if specified, otherwise mirror encoder
+        if decoder_dims is None:
+            decoder_dims = blocks_dims[::-1]
+        self.decoder = DenseResnet(input_dim=blocks_dims[-1], blocks_dims=decoder_dims, d_embedding=d_embedding, activ=activ, pe=False, norm=norm)
 
         # setting output size
         if output_cols is None:
