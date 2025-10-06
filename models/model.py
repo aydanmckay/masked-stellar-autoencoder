@@ -662,9 +662,10 @@ class TabResnetWrapper(BaseEstimator):
                         X_reconstructed, z = self.model(X_masked)
 
                         # Compute the reconstruction loss
-                        # not reconstructing some rows as below
+                        # Combine masks: reconstruct only positions that were (1) originally valid AND (2) artificially masked
+                        reconstruction_mask = mask[:, :-self.diff] & nanmask[:, :-self.diff]
                         l1_norm = z.abs().sum()
-                        loss = self.loss_fn(X_batch[:,:-self.diff], X_reconstructed, nanmask[:, :-self.diff], eX_batch[:, :-self.diff]) + self.lasso * l1_norm
+                        loss = self.loss_fn(X_batch[:,:-self.diff], X_reconstructed, reconstruction_mask, eX_batch[:, :-self.diff]) + self.lasso * l1_norm
 
                         optimizer.zero_grad()
                         loss.backward()
@@ -746,13 +747,14 @@ class TabResnetWrapper(BaseEstimator):
                 for X_batch,eX_batch in val_loader:
                     # Apply masking to validation data
                     X_masked, mask, nanmask = self._apply_mask(X_batch)
-    
+
                     # Forward pass
                     X_reconstructed, _ = self.model(X_masked)
-    
+
                     # Compute validation loss
-                    # not counting the parallax and ebv
-                    batch_loss = self.loss_fn(X_batch[:, :-self.diff], X_reconstructed, nanmask[:, :-self.diff], eX_batch[:, :-self.diff])
+                    # Combine masks: reconstruct only positions that were (1) originally valid AND (2) artificially masked
+                    reconstruction_mask = mask[:, :-self.diff] & nanmask[:, :-self.diff]
+                    batch_loss = self.loss_fn(X_batch[:, :-self.diff], X_reconstructed, reconstruction_mask, eX_batch[:, :-self.diff])
                     
                     val_loss += batch_loss.item()
                 loss_div += len(val_loader)
@@ -925,7 +927,9 @@ class TabResnetWrapper(BaseEstimator):
 
                 if multitask:
                     X_reconstructed, _ = self.model(X_masked)
-                    loss += self.loss_fn(X_batch[:, :-self.diff], X_reconstructed, nanmask[:, :-self.diff], eX_batch[:, :-self.diff])
+                    # Combine masks: reconstruct only positions that were (1) originally valid AND (2) artificially masked
+                    reconstruction_mask = mask[:, :-self.diff] & nanmask[:, :-self.diff]
+                    loss += self.loss_fn(X_batch[:, :-self.diff], X_reconstructed, reconstruction_mask, eX_batch[:, :-self.diff])
 
                 if rncloss:
                     features = torch.stack((y_pred, y_pred.clone()), dim=1)  # [bs, 2, feat_dim]
@@ -1046,7 +1050,9 @@ class TabResnetWrapper(BaseEstimator):
 
                 if multitask:
                     X_reconstructed, _ = self.model(X_masked)
-                    loss += self.loss_fn(X_batch[:, :-self.diff], X_reconstructed, nanmask[:, :-self.diff], eX_batch[:, :-self.diff])
+                    # Combine masks: reconstruct only positions that were (1) originally valid AND (2) artificially masked
+                    reconstruction_mask = mask[:, :-self.diff] & nanmask[:, :-self.diff]
+                    loss += self.loss_fn(X_batch[:, :-self.diff], X_reconstructed, reconstruction_mask, eX_batch[:, :-self.diff])
 
                 if rncloss:
                     features = torch.stack((y_pred, y_pred.clone()), dim=1)  # [bs, 2, feat_dim]
