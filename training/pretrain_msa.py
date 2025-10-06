@@ -37,7 +37,22 @@ def main():
     cols = config['data']['feature_cols']
     
     X = np.column_stack([TabResnetWrapper._clean_column(col, X[col]) for col in cols])
+    
+    # Validate data before fitting scaler
+    if np.any(np.isnan(X)) or np.any(np.isinf(X)):
+        print("Warning: Invalid values detected in training data before scaling")
+        # Remove rows with all NaN values
+        valid_rows = ~np.all(np.isnan(X), axis=1)
+        X = X[valid_rows]
+        if len(X) == 0:
+            raise ValueError("No valid data remaining after removing NaN rows")
+    
     featurescaler.fit(X)
+    
+    # Validate scaler was fitted properly
+    if not hasattr(featurescaler, 'scale_') or featurescaler.scale_ is None:
+        raise ValueError("Scaler failed to fit properly - scale_ attribute missing")
+    
     del X
 
     blocks_dims = config['model']['layer_dims']

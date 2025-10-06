@@ -425,9 +425,23 @@ class TabResnetWrapper(BaseEstimator):
 
         '''
         self.model = model
-        self.datafile = datafile
+        # Validate and handle datafile
+        if hasattr(datafile, 'keys'):
+            self.datafile = datafile
+        elif isinstance(datafile, str):
+            try:
+                import h5py
+                self.datafile = h5py.File(datafile, 'r')
+            except Exception as e:
+                raise ValueError(f"Could not open datafile '{datafile}': {e}")
+        else:
+            raise ValueError("datafile must be an open HDF5 file or file path")
+        
         self.featurescaler = scaler
-        self.scale_factors = self.featurescaler.scale_  # This is the IQR used by RobustScaler for each feature
+        if hasattr(self.featurescaler, 'scale_') and self.featurescaler.scale_ is not None:
+            self.scale_factors = self.featurescaler.scale_  # This is the IQR used by RobustScaler for each feature
+        else:
+            raise ValueError("Scaler must be fitted and have scale_ attribute before initializing wrapper")
         self.feature_cols = feature_cols
         self.error_cols = error_cols
         self.recon_cols = recon_cols
@@ -500,29 +514,53 @@ class TabResnetWrapper(BaseEstimator):
         return X_masked, combined_mask, nan_mask
 
     def _load_data(self, key):
-
-        '''There is a temporary byte fix in here as for some reason smss got saved as 
-        bytes and not as the proper format. If not needed then remove code and just
-        column_stack.'''
-
-        data = self.datafile[key][:]
-        
-        X = np.column_stack([data[col] for col in self.feature_cols])
-        eX = np.column_stack([data[col] for col in self.error_cols])
-        
-        # if data needs decoding:
-        # X = np.column_stack([self._clean_column(data[col]) for col in self.feature_cols])
-        # eX = np.column_stack([self._clean_column(data[col]) for col in self.error_cols])
-
-        # Find column-wise max ignoring NaNs
-        col_maxes = np.nanmax(eX, axis=0)
-        nan_mask = np.isnan(eX)
-        eX[nan_mask] = np.take(col_maxes, np.where(nan_mask)[1])
-
-        X = self.featurescaler.transform(X)
-        eX = eX / self.scale_factors
-        
-        return torch.Tensor(X).to(self.device), torch.Tensor(eX).to(self.device)
+        '''Load and validate data with proper error handling'''
+        try:
+            if key not in self.datafile:
+                raise KeyError(f"Key '{key}' not found in datafile")
+            
+            data = self.datafile[key][:]
+            if len(data) == 0:
+                raise ValueError(f"Dataset '{key}' is empty")
+            
+            # Validate required columns exist
+            missing_features = [col for col in self.feature_cols if col not in data.dtype.names]
+            missing_errors = [col for col in self.error_cols if col not in data.dtype.names]
+            
+            if missing_features:
+                raise ValueError(f"Missing feature columns in '{key}': {missing_features}")
+            if missing_errors:
+                raise ValueError(f"Missing error columns in '{key}': {missing_errors}")
+            
+            X = np.column_stack([data[col] for col in self.feature_cols])
+            eX = np.column_stack([data[col] for col in self.error_cols])
+            
+            # Validate data shapes
+            if X.shape[0] != eX.shape[0]:
+                raise ValueError(f"Feature and error arrays have mismatched lengths: {X.shape[0]} vs {eX.shape[0]}")
+            
+            # Handle missing error values more robustly
+            col_maxes = np.nanmax(eX, axis=0)
+            # Replace inf values with column max
+            eX = np.where(np.isinf(eX), col_maxes[None, :], eX)
+            # Replace NaN with column max
+            nan_mask = np.isnan(eX)
+            eX[nan_mask] = np.take(col_maxes, np.where(nan_mask)[1])
+            
+            # Apply scaling with validation
+            X = self.featurescaler.transform(X)
+            eX = eX / self.scale_factors
+            
+            # Final validation
+            if np.any(np.isnan(X)) or np.any(np.isinf(X)):
+                print(f"Warning: Invalid values in features for key '{key}'")
+            if np.any(np.isnan(eX)) or np.any(np.isinf(eX)):
+                print(f"Warning: Invalid values in errors for key '{key}'")
+            
+            return torch.Tensor(X).to(self.device), torch.Tensor(eX).to(self.device)
+            
+        except Exception as e:
+            raise RuntimeError(f"Error loading data for key '{key}': {e}")
     
     @staticmethod
     def _clean_column(col, col_data):
@@ -578,11 +616,13 @@ class TabResnetWrapper(BaseEstimator):
             ], lr=self.lr, momentum=0.9)
         scheduler = optim.lr_scheduler.ExponentialLR(optimizer, gamma=0.95)
 
-        # Configure logging
+        # Configure logging with proper file handling
+        os.makedirs(os.path.dirname(self.pt_log_file) if os.path.dirname(self.pt_log_file) else '.', exist_ok=True)
         logging.basicConfig(filename=self.pt_log_file, 
                             level=logging.INFO, 
                             format="%(asctime)s - Sub-Epoch: %(message)s",
-                            datefmt="%Y-%m-%d %H:%M:%S")
+                            datefmt="%Y-%m-%d %H:%M:%S",
+                            filemode='a')
 
         running_pt_loss = []
         running_pt_validation_loss = []
@@ -599,33 +639,50 @@ class TabResnetWrapper(BaseEstimator):
             self.model.train()
 
             for subkeynum,key in pbar:
+                try:
+                    X_train, eX_train = self._load_data(key)
+                    
+                    # Memory-efficient data loading
+                    if X_train.shape[0] > 100000:  # For large datasets, use pin_memory
+                        train_loader = DataLoader(TensorDataset(X_train, eX_train), 
+                                                 batch_size=mini_batch, 
+                                                 shuffle=True, 
+                                                 pin_memory=True,
+                                                 num_workers=2)
+                    else:
+                        train_loader = DataLoader(TensorDataset(X_train, eX_train), 
+                                                 batch_size=mini_batch, 
+                                                 shuffle=True)
 
-                X_train, eX_train = self._load_data(key)
-                
-                train_loader = DataLoader(TensorDataset(X_train, eX_train), batch_size=mini_batch, shuffle=True)
+                    for X_batch,eX_batch in train_loader:
+                        # Apply masking to training data batch
+                        X_masked, mask, nanmask = self._apply_mask(X_batch)
 
-                for X_batch,eX_batch in train_loader:
+                        # Forward pass (classification output is ignored for pretraining)
+                        X_reconstructed, z = self.model(X_masked)
 
-                    # Apply masking to training data batch
-                    X_masked, mask, nanmask = self._apply_mask(X_batch)
+                        # Compute the reconstruction loss
+                        # not reconstructing some rows as below
+                        l1_norm = z.abs().sum()
+                        loss = self.loss_fn(X_batch[:,:-self.diff], X_reconstructed, nanmask[:, :-self.diff], eX_batch[:, :-self.diff]) + self.lasso * l1_norm
 
-                    # Forward pass (classification output is ignored for pretraining)
-                    X_reconstructed, z = self.model(X_masked)
+                        optimizer.zero_grad()
+                        loss.backward()
+                        optimizer.step()
 
-                    # Compute the reconstruction loss
-                    # not reconstructing some rows as below
-                    l1_norm = z.abs().sum()
-                    loss = self.loss_fn(X_batch[:,:-self.diff], X_reconstructed, nanmask[:, :-self.diff], eX_batch[:, :-self.diff]) + self.lasso * l1_norm
+                        # print(loss)
+                        epoch_loss += loss.item()
 
-                    optimizer.zero_grad()
-                    loss.backward()
-                    optimizer.step()
+                    loss_div += len(train_loader)
 
-                    # print(loss)
-                    epoch_loss += loss.item()
-                loss_div += len(train_loader)
-                
-                logging.info(f"{subkeynum + 1}, Loss: {epoch_loss/loss_div}")
+                    # Clear GPU cache periodically
+                    if torch.cuda.is_available() and subkeynum % 10 == 0:
+                        torch.cuda.empty_cache()
+
+                    logging.info(f"{subkeynum + 1}, Loss: {epoch_loss/loss_div}")
+                except Exception as e:
+                    print(f"Error in training loop for key {key}: {e}")
+                    continue
 
             scheduler.step()
 
@@ -802,10 +859,13 @@ class TabResnetWrapper(BaseEstimator):
         running_ft_loss = []
         running_ft_validation_loss = []
         
+        # Configure logging with proper file handling
+        os.makedirs(os.path.dirname(self.ft_log_file) if os.path.dirname(self.ft_log_file) else '.', exist_ok=True)
         logging.basicConfig(filename=self.ft_log_file, 
                             level=logging.INFO, 
                             format="%(asctime)s - Sub-Epoch: %(message)s",
                             datefmt="%Y-%m-%d %H:%M:%S",
+                            filemode='a',
                             force=True)
                             
         if pert_features or pert_labels:

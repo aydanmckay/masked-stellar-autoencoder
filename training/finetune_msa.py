@@ -106,13 +106,29 @@ def main():
     e_vlabelled_set.append(velabel.reshape(-1, 1))
     e_vlabelled_set = np.concatenate(e_vlabelled_set, axis=1)
 
+    # Validate data before scaling
+    if np.any(np.isnan(trainset)) or np.any(np.isinf(trainset)):
+        print("Warning: Invalid values in training features before scaling")
+    if np.any(np.isnan(etrainset)) or np.any(np.isinf(etrainset)):
+        print("Warning: Invalid values in training errors before scaling")
+    
     featurescaler = RobustScaler()
     featurescaler.fit(trainset)
+    
+    # Validate scaler was fitted properly
+    if not hasattr(featurescaler, 'scale_') or featurescaler.scale_ is None:
+        raise ValueError("Feature scaler failed to fit properly")
     
     trainset = featurescaler.transform(trainset)
     validset = featurescaler.transform(validset)
     testset = featurescaler.transform(testset)
     scale_factors = featurescaler.scale_  # This is the IQR used by RobustScaler for each feature
+    
+    # Validate scale factors
+    if np.any(scale_factors <= 0):
+        print("Warning: Zero or negative scale factors detected")
+        scale_factors = np.where(scale_factors <= 0, 1.0, scale_factors)
+    
     etrainset = etrainset / scale_factors
     evalidset = evalidset / scale_factors
     etestset = etestset / scale_factors
