@@ -78,7 +78,15 @@ def main():
     lasso = config['training']['lasso']
     opt = config['training']['optimizer']
     lf = config['training']['loss_fn']
-    
+
+    # New training improvements
+    use_curriculum = config['training'].get('use_curriculum', False)
+    curriculum_start = config['training'].get('curriculum_start_ratio', 0.4)
+    curriculum_end = config['training'].get('curriculum_end_ratio', 0.9)
+    use_ema = config['training'].get('use_ema', False)
+    ema_decay = config['training'].get('ema_decay', 0.999)
+    warmup_epochs = config['training'].get('warmup_epochs', 0)
+
     pt_save_file = config['saving']['model_str']
     pt_log_file = config['saving']['log_file']
     ci = config['saving']['checkpoint_interval']
@@ -104,6 +112,12 @@ def main():
         pt_save_str=pt_save_file,
         pt_log_file=pt_log_file,
         checkpoint_interval=ci,
+        use_curriculum=use_curriculum,
+        curriculum_start_ratio=curriculum_start,
+        curriculum_end_ratio=curriculum_end,
+        use_ema=use_ema,
+        ema_decay=ema_decay,
+        warmup_epochs=warmup_epochs,
     )
 
     epochs = config['training']['epochs']

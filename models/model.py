@@ -413,6 +413,12 @@ class TabResnetWrapper(BaseEstimator):
                  pt_log_file='pt_loss.log',
                  ft_log_file='ft_loss.log',
                  checkpoint_interval=None,
+                 use_curriculum=False,
+                 curriculum_start_ratio=0.4,
+                 curriculum_end_ratio=0.9,
+                 use_ema=False,
+                 ema_decay=0.999,
+                 warmup_epochs=0,
                  ):
         
         '''
@@ -462,6 +468,50 @@ class TabResnetWrapper(BaseEstimator):
         self.pt_log_file = pt_log_file
         self.ft_log_file = ft_log_file
         self.checkpoint_interval = checkpoint_interval
+
+        # Curriculum learning parameters
+        self.use_curriculum = use_curriculum
+        self.curriculum_start_ratio = curriculum_start_ratio
+        self.curriculum_end_ratio = curriculum_end_ratio
+        self.xp_masking_ratio_original = xp_masking_ratio
+        self.m_masking_ratio_original = m_masking_ratio
+
+        # EMA parameters
+        self.use_ema = use_ema
+        self.ema_decay = ema_decay
+        if use_ema:
+            self.ema_model = self._create_ema_model()
+
+        # Warmup parameters
+        self.warmup_epochs = warmup_epochs
+
+    def _create_ema_model(self):
+        """Create an EMA copy of the model"""
+        import copy
+        ema_model = copy.deepcopy(self.model)
+        for param in ema_model.parameters():
+            param.requires_grad = False
+        return ema_model
+
+    def _update_ema(self):
+        """Update EMA model weights"""
+        if not self.use_ema:
+            return
+        with torch.no_grad():
+            for ema_param, model_param in zip(self.ema_model.parameters(), self.model.parameters()):
+                ema_param.data.mul_(self.ema_decay).add_(model_param.data, alpha=1 - self.ema_decay)
+
+    def _update_curriculum_masking(self, epoch, num_epochs):
+        """Update masking ratios based on curriculum learning schedule"""
+        if not self.use_curriculum:
+            return
+
+        # Linear schedule from start to end ratio
+        progress = min(epoch / num_epochs, 1.0)
+        current_ratio = self.curriculum_start_ratio + (self.curriculum_end_ratio - self.curriculum_start_ratio) * progress
+
+        self.xp_masking_ratio = current_ratio
+        self.m_masking_ratio = current_ratio * (self.m_masking_ratio_original / self.xp_masking_ratio_original)
 
     def _apply_mask(self, X, col_start_fixed=5, col_end_fixed=115, col_start_random=115):
         """
@@ -614,7 +664,23 @@ class TabResnetWrapper(BaseEstimator):
                 {'params': decay, 'weight_decay': self.wd},
                 {'params': no_decay, 'weight_decay': 0.0}
             ], lr=self.lr, momentum=0.9)
-        scheduler = optim.lr_scheduler.ExponentialLR(optimizer, gamma=0.95)
+
+        # Create scheduler with optional warmup
+        main_scheduler = optim.lr_scheduler.ExponentialLR(optimizer, gamma=0.95)
+        if self.warmup_epochs > 0:
+            warmup_scheduler = optim.lr_scheduler.LinearLR(
+                optimizer,
+                start_factor=0.1,
+                end_factor=1.0,
+                total_iters=self.warmup_epochs
+            )
+            scheduler = optim.lr_scheduler.SequentialLR(
+                optimizer,
+                schedulers=[warmup_scheduler, main_scheduler],
+                milestones=[self.warmup_epochs]
+            )
+        else:
+            scheduler = main_scheduler
 
         # Configure logging with proper file handling
         os.makedirs(os.path.dirname(self.pt_log_file) if os.path.dirname(self.pt_log_file) else '.', exist_ok=True)
@@ -631,6 +697,8 @@ class TabResnetWrapper(BaseEstimator):
         loss_div = 0.
 
         for epoch in range(num_epochs):
+            # Update curriculum masking ratios
+            self._update_curriculum_masking(epoch, num_epochs)
 
             random.shuffle(train_keys)
 
@@ -670,6 +738,9 @@ class TabResnetWrapper(BaseEstimator):
                         loss.backward()
                         optimizer.step()
 
+                        # Update EMA model
+                        self._update_ema()
+
                         # print(loss)
                         epoch_loss += loss.item()
 
@@ -696,11 +767,25 @@ class TabResnetWrapper(BaseEstimator):
                 logging.info(f"{epoch + 1}, Validation Loss: {validation_loss}")
                 running_pt_validation_loss.append(validation_loss)
 
-            torch.save(self.model.state_dict(), self.pt_save_str)
+            # Save both regular and EMA models
+            if self.use_ema:
+                torch.save({
+                    'model_state_dict': self.model.state_dict(),
+                    'ema_model_state_dict': self.ema_model.state_dict()
+                }, self.pt_save_str)
+            else:
+                torch.save(self.model.state_dict(), self.pt_save_str)
 
             if self.checkpoint_interval is not None:
                 if (epoch+1) % self.checkpoint_interval == 0:
-                    torch.save(self.model.state_dict(), self.pt_save_str.split('.')[0]+'_checkpoint_'+str(self.checkpoint_interval)+'.pth')
+                    checkpoint_path = self.pt_save_str.split('.')[0]+'_checkpoint_'+str(self.checkpoint_interval)+'.pth'
+                    if self.use_ema:
+                        torch.save({
+                            'model_state_dict': self.model.state_dict(),
+                            'ema_model_state_dict': self.ema_model.state_dict()
+                        }, checkpoint_path)
+                    else:
+                        torch.save(self.model.state_dict(), checkpoint_path)
 
         if ft_stuff is not None:
             self.fit(ft_stuff[0],

@@ -58,6 +58,14 @@ training:
   mini_batch_size: 1024
   epochs: 100
 
+  # Advanced training features (optional)
+  # use_curriculum: true  # Gradually increase masking ratio during training
+  # curriculum_start_ratio: 0.4  # Starting masking ratio (easier task)
+  # curriculum_end_ratio: 0.9  # Final masking ratio (matches xp_masking_ratio)
+  # use_ema: true  # Use exponential moving average of model weights
+  # ema_decay: 0.999  # EMA decay rate (higher = slower update)
+  # warmup_epochs: 5  # Number of epochs for learning rate warmup
+
 saving:
   model_str: '/arc/home/aydanmckay/masked_stellar_autoencoder_10M.pth'
   log_file: 'pretrain_msa_100_epoch.log'
