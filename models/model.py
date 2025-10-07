@@ -361,10 +361,17 @@ class PredictionHead(nn.Module):
 
     def forward(self, x):
         h = self.shared(x)
-        y = self.output_y(h)
-        yl = self.output_lower(h)
-        yu = self.output_upper(h)
-        return torch.stack([yl, y, yu], dim=2)
+        y_median = self.output_y(h)
+
+        # Predict offsets from median to ensure monotonicity: lower ≤ median ≤ upper
+        # Use softplus to ensure positive offsets
+        lower_offset = torch.nn.functional.softplus(self.output_lower(h))
+        upper_offset = torch.nn.functional.softplus(self.output_upper(h))
+
+        y_lower = y_median - lower_offset
+        y_upper = y_median + upper_offset
+
+        return torch.stack([y_lower, y_median, y_upper], dim=2)
 
 def quantile_loss(preds: torch.Tensor, target: torch.Tensor, quantiles: torch.Tensor) -> torch.Tensor:
     """
@@ -378,16 +385,24 @@ def quantile_loss(preds: torch.Tensor, target: torch.Tensor, quantiles: torch.Te
     Returns:
         torch.Tensor: The mean loss for the batch. A single scalar value.
     """
-    # Expand target to match preds: (batch_size, num_labels, num_quantiles)
-    mask = ~torch.isnan(target)
-    target = target.unsqueeze(2).expand_as(preds)  # Add quantile dim
+    # Create mask for valid (non-NaN) targets
+    mask = ~torch.isnan(target)  # Shape: (batch_size, num_labels)
 
-    # Expand quantiles to match target shape
-    # Shape: (1, 1, num_quantiles)
+    # Expand target to match preds: (batch_size, num_labels, num_quantiles)
+    target_expanded = target.unsqueeze(2).expand_as(preds)
+
+    # Expand quantiles to match target shape: (1, 1, num_quantiles)
     quantiles = quantiles.view(1, 1, -1)
-    error = target - preds
+
+    # Compute quantile loss
+    error = target_expanded - preds
     loss = torch.max((quantiles - 1) * error, quantiles * error)
-    loss = loss[mask]
+
+    # Expand mask to 3D to match loss shape: (batch_size, num_labels, num_quantiles)
+    mask_expanded = mask.unsqueeze(2).expand_as(loss)
+
+    # Apply mask and compute mean
+    loss = loss[mask_expanded]
 
     return loss.mean()
 
@@ -614,7 +629,8 @@ class TabResnetWrapper(BaseEstimator):
                 {'params': decay, 'weight_decay': self.wd},
                 {'params': no_decay, 'weight_decay': 0.0}
             ], lr=self.lr, momentum=0.9)
-        scheduler = optim.lr_scheduler.ExponentialLR(optimizer, gamma=0.95)
+        # Use cosine annealing with warm restarts for better convergence
+        scheduler = optim.lr_scheduler.CosineAnnealingWarmRestarts(optimizer, T_0=10, T_mult=2, eta_min=self.lr * 0.01)
 
         # Configure logging with proper file handling
         os.makedirs(os.path.dirname(self.pt_log_file) if os.path.dirname(self.pt_log_file) else '.', exist_ok=True)
@@ -669,6 +685,8 @@ class TabResnetWrapper(BaseEstimator):
 
                         optimizer.zero_grad()
                         loss.backward()
+                        # Clip gradients to prevent exploding gradients in deep networks
+                        torch.nn.utils.clip_grad_norm_(self.model.parameters(), max_norm=1.0)
                         optimizer.step()
 
                         # print(loss)
@@ -943,7 +961,9 @@ class TabResnetWrapper(BaseEstimator):
                     loss += criterion2(y_pred, y_batch, torch.ones_like(y_pred_err), torch.ones_like(batch[3]))
                 
                 optimizer.zero_grad()
-                loss.backward() 
+                loss.backward()
+                # Clip gradients to prevent exploding gradients
+                torch.nn.utils.clip_grad_norm_(list(self.model.parameters()) + list(self.ft.parameters()), max_norm=1.0)
                 optimizer.step()
                 
                 epoch_loss += loss.item()
