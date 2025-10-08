@@ -30,14 +30,14 @@ The data fed to the model has a specific structure which is created using the fo
 - Sky-Mapper DR4 - Data was provided as numerous files containing pre-computed crossmatches with *Gaia* DR3 as a subset of columns within the DR4 files. 
     - [Documentation](https://skymapper.anu.edu.au/data-release/)
     - [Data](https://skymapper.anu.edu.au/_data/DR4/)
-- 2MASS DR9 - Matched using source_id column via multiple asynchronous ADQL queries through the *Gaia* Archive, where pre computed crossmatches have already exist courtesy of the *Gaia* Data Processing and Analysis Consortium (DPAC).
+- Pan-STARRS DR1 - Matched using source_id column via multiple asynchronous ADQL queries ([example](example_adql_match.py)) through the *Gaia* Archive, where pre computed crossmatches have already exist courtesy of the *Gaia* Data Processing and Analysis Consortium (DPAC).
+    - [Documentation](https://outerspace.stsci.edu/display/PANSTARRS)
+    - [Gaia Archive Documentation](https://gea.esac.esa.int/archive/documentation/GDR3/Catalogue_consolidation/chap_crossmatch/sec_crossmatch_externalCat/ssec_crossmatch_panstarrs.html)
+- 2MASS - Matched using source_id column via multiple asynchronous ADQL queries through the *Gaia* Archive.
     - [Documentation](https://irsa.ipac.caltech.edu/Missions/2mass.html)
     - [Gaia Archive Documentation](https://gea.esac.esa.int/archive/documentation/GDR3/Catalogue_consolidation/chap_crossmatch/sec_crossmatch_externalCat/ssec_crossmatch_2mass.html)
 - SDSS DR13 - Matched using source_id column via multiple asynchronous ADQL queries through the *Gaia* Archive.
     - [Gaia Archive Documentation](https://gea.esac.esa.int/archive/documentation/GDR3/Catalogue_consolidation/chap_crossmatch/sec_crossmatch_externalCat/ssec_crossmatch_sdss.html)
-- Pan-STARRS DR1 - Matched using source_id column via multiple asynchronous ADQL queries through the *Gaia* Archive.
-    - [Documentation](https://outerspace.stsci.edu/display/PANSTARRS)
-    - [Gaia Archive Documentation](https://gea.esac.esa.int/archive/documentation/GDR3/Catalogue_consolidation/chap_crossmatch/sec_crossmatch_externalCat/ssec_crossmatch_panstarrs.html)
 
 topcat stilts was used to concatenate the numerous tables matched through adql and astroquery.gaia into singular HDF files for 2MASS, SDSS, and Pan-STARRS.
 
