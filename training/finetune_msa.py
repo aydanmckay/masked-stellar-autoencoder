@@ -144,9 +144,10 @@ def main():
         pt_activ = config['model']['pt_activ_func']
         d_embed = config['model']['rtdl_embed']
         norm = config['model']['norm']
+        decoder_dims = config['model'].get('decoder_dims', None)  # Optional asymmetric decoder
 
         recon_cols = config['data']['recon_cols']
-    
+
         model = make_model(
             len(cols),
             blocks_dims,
@@ -154,6 +155,7 @@ def main():
             pt_activ,
             d_embed,
             norm,
+            decoder_dims=decoder_dims,
         )
 
         model.load_state_dict(torch.load(config['model']['saved_weights'], map_location=torch.device('cuda' if torch.cuda.is_available() else 'cpu')))

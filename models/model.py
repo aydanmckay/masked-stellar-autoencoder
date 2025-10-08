@@ -428,6 +428,8 @@ class TabResnetWrapper(BaseEstimator):
                  pt_log_file='pt_loss.log',
                  ft_log_file='ft_loss.log',
                  checkpoint_interval=None,
+                 pert_features=False,
+                 pert_scale=1.0,
                  ):
         
         '''
@@ -477,6 +479,8 @@ class TabResnetWrapper(BaseEstimator):
         self.pt_log_file = pt_log_file
         self.ft_log_file = ft_log_file
         self.checkpoint_interval = checkpoint_interval
+        self.pert_features = pert_features
+        self.pert_scale = pert_scale
 
     def _apply_mask(self, X, col_start_fixed=5, col_end_fixed=115, col_start_random=115):
         """
@@ -671,6 +675,11 @@ class TabResnetWrapper(BaseEstimator):
                                                  shuffle=True)
 
                     for X_batch,eX_batch in train_loader:
+                        # Apply data augmentation if enabled (add Gaussian noise scaled by errors)
+                        if self.pert_features:
+                            noise = torch.randn_like(X_batch) * eX_batch * self.pert_scale
+                            X_batch = X_batch + noise
+
                         # Apply masking to training data batch
                         X_masked, mask, nanmask = self._apply_mask(X_batch)
 
@@ -1090,7 +1099,7 @@ class TabResnetWrapper(BaseEstimator):
         print(f"Validation Loss: {val_loss / len(val_loader)}")
         return val_loss / len(val_loader)
 
-def make_model(input_dim, layer_dims, output_dim, activ, rtdl_embed_dim, norm):
+def make_model(input_dim, layer_dims, output_dim, activ, rtdl_embed_dim, norm, decoder_dims=None):
     '''
     Helper function to make the MSA in the same file as the wrapper
 
@@ -1106,6 +1115,9 @@ def make_model(input_dim, layer_dims, output_dim, activ, rtdl_embed_dim, norm):
         Embedding dimension the input data is blown up to.
     norm :: string
         String of the possible normalization options. Must be one of ('layer', or 'batch')
+    decoder_dims :: list, optional
+        Decoder dimensions. If None, uses symmetric (mirrored) encoder dimensions.
+        For asymmetric decoder, specify custom dimensions (e.g., [256, 512, 1024])
     '''
 
     model = TabResnet(
@@ -1115,5 +1127,6 @@ def make_model(input_dim, layer_dims, output_dim, activ, rtdl_embed_dim, norm):
         activ=activ,
         d_embedding=rtdl_embed_dim,
         norm=norm,
+        decoder_dims=decoder_dims,
     )
     return model

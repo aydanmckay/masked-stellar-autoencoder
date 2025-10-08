@@ -47,6 +47,7 @@ model:
   pt_activ_func: 'elu'
   norm: 'layer'
   rtdl_embed: 16
+  # decoder_dims: [256, 512, 1024]  # Optional: asymmetric decoder (default: mirrors encoder)
   saved_weights: '/arc/home/aydanmckay/bprp_mae/.model_instances/checkpoint_60_fullmodelrealmags0605.pth'
 
 training:
