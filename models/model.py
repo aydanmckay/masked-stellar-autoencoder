@@ -24,6 +24,40 @@ from sklearn.preprocessing import StandardScaler, RobustScaler
 
 from .blocks import TabResnet
 
+class EMA:
+    """Exponential Moving Average of model weights."""
+    def __init__(self, model, decay):
+        self.model = model
+        self.decay = decay
+        self.shadow = {}
+        self.backup = {}
+
+    def register(self):
+        for name, param in self.model.named_parameters():
+            if param.requires_grad:
+                self.shadow[name] = param.data.clone()
+
+    def update(self):
+        for name, param in self.model.named_parameters():
+            if param.requires_grad:
+                assert name in self.shadow
+                new_average = (1.0 - self.decay) * param.data + self.decay * self.shadow[name]
+                self.shadow[name] = new_average.clone()
+
+    def apply_shadow(self):
+        for name, param in self.model.named_parameters():
+            if param.requires_grad:
+                assert name in self.shadow
+                self.backup[name] = param.data
+                param.data = self.shadow[name]
+
+    def restore(self):
+        for name, param in self.model.named_parameters():
+            if param.requires_grad:
+                assert name in self.backup
+                param.data = self.backup[name]
+        self.backup = {}
+
 class MaskedGaussianNLLLoss(nn.Module):
     def __init__(self, eps=1e-6, reduction='mean'):
         super().__init__()
@@ -428,6 +462,12 @@ class TabResnetWrapper(BaseEstimator):
                  pt_log_file='pt_loss.log',
                  ft_log_file='ft_loss.log',
                  checkpoint_interval=None,
+                 use_curriculum: bool = False,
+                 curriculum_start_ratio: float = 0.4,
+                 curriculum_end_ratio: float = 0.9,
+                 use_ema: bool = False,
+                 ema_decay: float = 0.999,
+                 warmup_epochs: int = 5,
                  ):
         
         '''
@@ -478,7 +518,17 @@ class TabResnetWrapper(BaseEstimator):
         self.ft_log_file = ft_log_file
         self.checkpoint_interval = checkpoint_interval
 
-    def _apply_mask(self, X, col_start_fixed=5, col_end_fixed=115, col_start_random=115):
+        self.initial_xp_masking_ratio = initial_xp_masking_ratio
+        self.initial_m_masking_ratio = initial_m_masking_ratio
+        self.final_xp_masking_ratio = xp_masking_ratio
+        self.final_m_masking_ratio = m_masking_ratio
+        self.use_ema = use_ema
+        self.ema_decay = ema_decay
+        self.warmup_epochs = warmup_epochs
+        if self.use_ema:
+            self.ema = EMA(self.model, self.ema_decay)
+
+    def _apply_mask(self, X, current_xp_masking_ratio, current_m_masking_ratio, col_start_fixed=5, col_end_fixed=115, col_start_random=115):
         """
         Apply masking strategies to the input tensor while tracking NaN locations:
         1. Mask columns [5:115] for a random subset of rows.
@@ -486,6 +536,8 @@ class TabResnetWrapper(BaseEstimator):
     
         Args:
             X (Tensor): Input data tensor.
+            current_xp_masking_ratio (float): The current masking ratio for XP coefficients.
+            current_m_masking_ratio (float): The current masking ratio for photometric bands.
             col_start_fixed (int): Start index of the fixed subsection of columns to mask.
             col_end_fixed (int): End index (exclusive) of the fixed subsection to mask.
             col_start_random (int): Start index for columns to apply random masking.
@@ -502,7 +554,7 @@ class TabResnetWrapper(BaseEstimator):
         X_masked[~nan_mask] = -9999
     
         # row-wise masking for cols [5:115] - XP coeffs
-        num_rows_to_mask = int(self.xp_masking_ratio * X.shape[0])
+        num_rows_to_mask = int(current_xp_masking_ratio * X.shape[0])
         row_indices = torch.randperm(X.shape[0])[:num_rows_to_mask].to(self.device)
     
         mask_fixed = torch.zeros_like(X, dtype=torch.bool).to(self.device)
@@ -513,11 +565,11 @@ class TabResnetWrapper(BaseEstimator):
     
         # mask [0:5] - W1, W2, G, BP, RP
         mask_random[:, :col_start_fixed] = (
-            torch.rand(X[:, :col_start_fixed].shape, device=self.device) < self.m_masking_ratio
+            torch.rand(X[:, :col_start_fixed].shape, device=self.device) < current_m_masking_ratio
         )
         # mask [115:] - all other phot
         mask_random[:, col_start_random:] = (
-            torch.rand(X[:, col_start_random:].shape, device=self.device) < self.m_masking_ratio
+            torch.rand(X[:, col_start_random:].shape, device=self.device) < current_m_masking_ratio
         )
     
         # apply masks
@@ -648,6 +700,13 @@ class TabResnetWrapper(BaseEstimator):
 
         for epoch in range(num_epochs):
 
+            # Calculate current masking ratio for curriculum learning
+            xp_ratio_step = (self.final_xp_masking_ratio - self.initial_xp_masking_ratio) / (num_epochs - 1) if num_epochs > 1 else 0
+            current_xp_masking_ratio = self.initial_xp_masking_ratio + epoch * xp_ratio_step
+
+            m_ratio_step = (self.final_m_masking_ratio - self.initial_m_masking_ratio) / (num_epochs - 1) if num_epochs > 1 else 0
+            current_m_masking_ratio = self.initial_m_masking_ratio + epoch * m_ratio_step
+
             random.shuffle(train_keys)
 
             n_files = len(train_keys)
@@ -672,7 +731,7 @@ class TabResnetWrapper(BaseEstimator):
 
                     for X_batch,eX_batch in train_loader:
                         # Apply masking to training data batch
-                        X_masked, mask, nanmask = self._apply_mask(X_batch)
+                        X_masked, mask, nanmask = self._apply_mask(X_batch, current_xp_masking_ratio, current_m_masking_ratio)
 
                         # Forward pass (classification output is ignored for pretraining)
                         X_reconstructed, z = self.model(X_masked)

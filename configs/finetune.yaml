@@ -1,5 +1,12 @@
+paths:
+  base: '/arc/home/aydanmckay/bprp_mae/final_model/pt_testing/'
+  datafile: '10M_pretrain_data0622.h5'
+  ft_datafile: '/arc/projects/k-pop/catalogues/andrae2023/ftset_spec_ga_0602_realmags.fits'
+  saved_weights: '/arc/home/aydanmckay/bprp_mae/.model_instances/checkpoint_60_fullmodelrealmags0605.pth'
+  model_str: 'masked_stellar_autoencoder_ft_10M.pth'
+  log_file: 'finetune_msa_100_epoch.log'
+
 data:
-  datafile: '/arc/home/aydanmckay/bprp_mae/final_model/pt_testing/10M_pretrain_data0622.h5'
   valid_keys: ['sslset11_part0','sslset14_part0','sslset2_part0','sslset5_part0','sslset20_part0']
   feature_cols: ['W1','W2','G','BP','RP','bp_1','bp_2','bp_3','bp_4','bp_5','bp_6','bp_7','bp_8','bp_9',
                  'bp_10','bp_11','bp_12','bp_13','bp_14','bp_15','bp_16','bp_17','bp_18','bp_19','bp_20',
@@ -39,7 +46,6 @@ data:
                'rp_44','rp_45','rp_46','rp_47','rp_48','rp_49','rp_50','rp_51','rp_52','rp_53','rp_54',
                'rp_55','U_SMSS','V_SMSS','G_SMSS','R_SMSS','I_SMSS','Z_SMSS','U_SDSS','G_SDSS','R_SDSS',
                'I_SDSS','Z_SDSS','G_PS1','R_PS1','I_PS1','Z_PS1','Y_PS1','J','H','KS']
-  ft_datafile: '/arc/projects/k-pop/catalogues/andrae2023/ftset_spec_ga_0602_realmags.fits'
   classes: ['teff','e_teff','logg','e_logg','fe_h','e_fe_h','alpha','e_alpha','age','e_age']
 
 model:
@@ -47,7 +53,6 @@ model:
   pt_activ_func: 'elu'
   norm: 'layer'
   rtdl_embed: 16
-  saved_weights: '/arc/home/aydanmckay/bprp_mae/.model_instances/checkpoint_60_fullmodelrealmags0605.pth'
 
 training:
   xp_masking_ratio: 0.9
@@ -80,6 +85,4 @@ finetuning:
   ensemble_path: 'finetuning-checkpoint-here.pth'
 
 saving:
-  model_str: 'masked_stellar_autoencoder_ft_10M.pth'
-  log_file: 'finetune_msa_100_epoch.log'
   checkpoint_interval: 50

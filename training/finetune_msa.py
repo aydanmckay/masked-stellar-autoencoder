@@ -28,13 +28,21 @@ def main():
     with open(args.config, "r") as f:
         config = yaml.safe_load(f)
 
+    # Construct absolute paths
+    base_path = config['paths']['base']
+    datafile = os.path.join(base_path, config['paths']['datafile'])
+    ft_datafile = os.path.join(base_path, config['paths']['ft_datafile'])
+    saved_weights = os.path.join(base_path, config['paths']['saved_weights'])
+    model_str = os.path.join(base_path, config['paths']['model_str'])
+    log_file = os.path.join(base_path, config['paths']['log_file'])
+
     if config['finetuning']['ensemble']:
         seeds = np.random.randint(0, 1000, size=100).tolist()
     else:
         seeds = [config['finetuning']['seed']]
 
     # loading the finetuning dataset
-    data = Table.read(config['data']['ft_datafile']).to_pandas()
+    data = Table.read(ft_datafile).to_pandas()
     errordata = data.copy()
 
     cols = config['data']['feature_cols']
@@ -156,7 +164,7 @@ def main():
             norm,
         )
 
-        model.load_state_dict(torch.load(config['model']['saved_weights'], map_location=torch.device('cuda' if torch.cuda.is_available() else 'cpu')))
+        model.load_state_dict(torch.load(saved_weights, map_location=torch.device('cuda' if torch.cuda.is_available() else 'cpu')))
     
         xp_ratio = config['training']['xp_masking_ratio']
         m_ratio = config['training']['m_masking_ratio']
@@ -166,11 +174,9 @@ def main():
         opt = config['training']['optimizer']
         lf = config['training']['loss_fn']
         
-        ft_save_file = config['saving']['model_str']
-        ft_log_file = config['saving']['log_file']
         ci = config['saving']['checkpoint_interval']
 
-        pretrain_file = config['data']['datafile']
+        pretrain_file = datafile
 
         # Initialize the pretraining wrapper
         wrapper = TabResnetWrapper(
@@ -188,8 +194,10 @@ def main():
             wd=wd,
             lasso=lasso,
             lf=lf,
-            ft_save_str=ft_save_file,
-            ft_log_file=ft_log_file,
+        pt_save_str=model_str,
+        ft_save_str=model_str,
+        pt_log_file=log_file,
+        ft_log_file=log_file,
             checkpoint_interval=ci,
         )
 
