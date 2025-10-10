@@ -11,6 +11,7 @@ repo_root = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 sys.path.insert(0, repo_root)
 
 from models.model import make_model, TabResnetWrapper
+from data.data_validator import DataValidator
 
 def main():
 
@@ -23,8 +24,15 @@ def main():
     with open(args.config, "r") as f:
         config = yaml.safe_load(f)
     
+    # Construct absolute paths
+    base_path = config['paths']['base']
+    datafile = os.path.join(base_path, config['paths']['datafile'])
+    model_str = os.path.join(base_path, config['paths']['model_str'])
+    log_file = os.path.join(base_path, config['paths']['log_file'])
+
     # loading the pretraining file to pass to the wrapper
-    pretrain_file = h5py.File(config['data']['datafile'])
+    DataValidator.validate_hdf5_file(datafile)
+    pretrain_file = h5py.File(datafile, 'r')
 
     # splitting up the keys
     keys_valid = config['data']['valid_keys']
@@ -32,28 +40,29 @@ def main():
 
     featurescaler = RobustScaler()
     # as a test since there currently isn't a finetuning set
-    X = pretrain_file[keys_train[0]][:]
+    X_sample = pretrain_file[keys_train[0]][:]
 
     cols = config['data']['feature_cols']
     
-    X = np.column_stack([TabResnetWrapper._clean_column(col, X[col]) for col in cols])
+    X_sample = np.column_stack([TabResnetWrapper._clean_column(col, X_sample[col]) for col in cols])
     
     # Validate data before fitting scaler
-    if np.any(np.isnan(X)) or np.any(np.isinf(X)):
-        print("Warning: Invalid values detected in training data before scaling")
-        # Remove rows with all NaN values
-        valid_rows = ~np.all(np.isnan(X), axis=1)
-        X = X[valid_rows]
-        if len(X) == 0:
-            raise ValueError("No valid data remaining after removing NaN rows")
+    validator_report = DataValidator.validate_stellar_data(X_sample, cols)
+    if not validator_report['valid']:
+        raise ValueError(f"Initial data validation failed: {validator_report['errors']}")
+
+    # Remove rows with all NaN values before fitting scaler
+    valid_rows = ~np.all(np.isnan(X_sample), axis=1)
+    X_sample = X_sample[valid_rows]
+    if len(X_sample) == 0:
+        raise ValueError("No valid data remaining after removing NaN rows")
     
-    featurescaler.fit(X)
+    featurescaler.fit(X_sample)
     
     # Validate scaler was fitted properly
-    if not hasattr(featurescaler, 'scale_') or featurescaler.scale_ is None:
-        raise ValueError("Scaler failed to fit properly - scale_ attribute missing")
+    DataValidator.validate_scaling_consistency(featurescaler, X_sample)
     
-    del X
+    del X_sample
 
     blocks_dims = config['model']['layer_dims']
     pt_activ = config['model']['pt_activ_func']
@@ -71,6 +80,8 @@ def main():
         norm,
     )
 
+    initial_xp_ratio = config['training']['initial_xp_masking_ratio']
+    initial_m_ratio = config['training']['initial_m_masking_ratio']
     xp_ratio = config['training']['xp_masking_ratio']
     m_ratio = config['training']['m_masking_ratio']
     lr = config['training']['lr']
@@ -79,8 +90,6 @@ def main():
     opt = config['training']['optimizer']
     lf = config['training']['loss_fn']
     
-    pt_save_file = config['saving']['model_str']
-    pt_log_file = config['saving']['log_file']
     ci = config['saving']['checkpoint_interval']
 
     error_cols = config['data']['error_cols']
@@ -93,6 +102,8 @@ def main():
         feature_cols=cols,
         error_cols=error_cols,
         recon_cols=recon_cols,
+        initial_xp_masking_ratio=initial_xp_ratio,
+        initial_m_masking_ratio=initial_m_ratio,
         xp_masking_ratio=xp_ratio,
         m_masking_ratio=m_ratio,
         latent_size=blocks_dims[-1],
@@ -101,9 +112,15 @@ def main():
         wd=wd,
         lasso=lasso,
         lf=lf,
-        pt_save_str=pt_save_file,
-        pt_log_file=pt_log_file,
+        pt_save_str=model_str,
+        pt_log_file=log_file,
         checkpoint_interval=ci,
+        use_curriculum=config['training'].get('use_curriculum', False),
+        curriculum_start_ratio=config['training'].get('curriculum_start_ratio', 0.4),
+        curriculum_end_ratio=config['training'].get('curriculum_end_ratio', 0.9),
+        use_ema=config['training'].get('use_ema', False),
+        ema_decay=config['training'].get('ema_decay', 0.999),
+        warmup_epochs=config['training'].get('warmup_epochs', 5),
     )
 
     epochs = config['training']['epochs']
