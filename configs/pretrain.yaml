@@ -1,6 +1,10 @@
+paths:
+  base: '/arc/home/aydanmckay/bprp_mae/final_model/pt_testing/'
+  datafile: '10M_pretrain_data0622.h5'
+  model_str: 'masked_stellar_autoencoder_10M.pth'
+  log_file: 'pretrain_msa_100_epoch.log'
+
 data:
-  # datafile: '/arc/projects/k-pop/catalogues/andrae2023/sslset-realmags-full-052725.h5'
-  datafile: '/arc/home/aydanmckay/bprp_mae/final_model/pt_testing/10M_pretrain_data0622.h5'
   valid_keys: ['sslset11_part0','sslset14_part0','sslset2_part0','sslset5_part0','sslset20_part0']
   feature_cols: ['W1','W2','G','BP','RP','bp_1','bp_2','bp_3','bp_4','bp_5','bp_6','bp_7','bp_8','bp_9',
                  'bp_10','bp_11','bp_12','bp_13','bp_14','bp_15','bp_16','bp_17','bp_18','bp_19','bp_20',
@@ -57,8 +61,13 @@ training:
   loss_fn: 'mae'
   mini_batch_size: 1024
   epochs: 100
+  # Advanced training features (optional)
+  # use_curriculum: true # Gradually increase masking ratio during training
+  initial_xp_masking_ratio: 0.5
+  initial_m_masking_ratio: 0.2
+  # use_ema: true # Use exponential moving average of model weights
+  # ema_decay: 0.999 # EMA decay rate (higher = slower update)
+  # warmup_epochs: 5 # Number of epochs for learning rate warmup
 
 saving:
-  model_str: '/arc/home/aydanmckay/masked_stellar_autoencoder_10M.pth'
-  log_file: 'pretrain_msa_100_epoch.log'
   checkpoint_interval: 2
