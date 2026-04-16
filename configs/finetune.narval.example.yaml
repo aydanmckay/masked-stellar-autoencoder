@@ -1,5 +1,7 @@
+# Example for Alliance Narval: set export SCRATCH=/scratch/$USER (or your allocation path)
+# before sbatch. Paths use env expansion via training/config_paths.py.
 data:
-  datafile: '/arc/home/aydanmckay/bprp_mae/final_model/pt_testing/10M_pretrain_data0622.h5'
+  datafile: '$SCRATCH/msa/data/pretrain_ssl.h5'
   valid_keys: ['sslset11_part0','sslset14_part0','sslset2_part0','sslset5_part0','sslset20_part0']
   feature_cols: ['W1','W2','G','BP','RP','bp_1','bp_2','bp_3','bp_4','bp_5','bp_6','bp_7','bp_8','bp_9',
                  'bp_10','bp_11','bp_12','bp_13','bp_14','bp_15','bp_16','bp_17','bp_18','bp_19','bp_20',
@@ -39,7 +41,7 @@ data:
                'rp_44','rp_45','rp_46','rp_47','rp_48','rp_49','rp_50','rp_51','rp_52','rp_53','rp_54',
                'rp_55','U_SMSS','V_SMSS','G_SMSS','R_SMSS','I_SMSS','Z_SMSS','U_SDSS','G_SDSS','R_SDSS',
                'I_SDSS','Z_SDSS','G_PS1','R_PS1','I_PS1','Z_PS1','Y_PS1','J','H','KS']
-  ft_datafile: '/arc/projects/k-pop/catalogues/andrae2023/ftset_spec_ga_0602_realmags.fits'
+  ft_datafile: '$SCRATCH/msa/data/ftset_spec_ga_realmags.fits'
   classes: ['teff','e_teff','logg','e_logg','fe_h','e_fe_h','alpha','e_alpha','age','e_age']
 
 model:
@@ -48,12 +50,11 @@ model:
   norm: 'layer'
   rtdl_embed: 16
   # decoder_dims: [256, 512, 1024]  # Optional: asymmetric decoder (default: mirrors encoder)
-  saved_weights: '/arc/home/aydanmckay/bprp_mae/.model_instances/checkpoint_60_fullmodelrealmags0605.pth'
+  saved_weights: '$SCRATCH/msa/checkpoints/pretrain_latest.pth'
 
 training:
   xp_masking_ratio: 0.9
   m_masking_ratio: 0.6
-  mask_mixture_xp_full_frac: 0.0
   lr: 0.00001
   weight_decay: 0.00001
   lasso: 0
@@ -61,34 +62,24 @@ training:
   loss_fn: 'mae'
   mini_batch_size: 1024
   epochs: 100
-  # CosineAnnealingWarmRestarts: one scheduler.step() per pretrain epoch
-  scheduler_cosine_t0: 10
-  scheduler_cosine_t_mult: 2
-  scheduler_eta_min_factor: 0.01   # eta_min = lr * this
 
-# Parallax / distance (see docs/METHODOLOGY.md). Defaults preserve legacy behaviour.
+# Recommended for new Narval science runs (see docs/METHODOLOGY.md).
 preprocessing:
-  astrometry_input_policy: legacy_raw   # legacy_raw | snr_clipped
+  astrometry_input_policy: snr_clipped
   astrometry_snr_cap: 10.0
-  parallax_target_space: asinh_mas     # linear_mas | log10_mas | asinh_mas
+  parallax_target_space: log10_mas
   parallax_floor_mas: 1.0e-4
-  teff_target_space: log10              # linear | log10
-  xp_feature_scaling: global            # robust | global (preserves XP spectral trace covariance)
-  label_scaler: power                   # standard | robust | power (spectroscopic labels + parallax target scaler)
 
+# Encoder LR defaults to training.lr when encoder_lr is null (see finetune.yaml).
 finetuning:
   num_epochs: 101
   mini_batch: 512 
   linearprobe: false
   mask: true
-  xp_masking_ratio: 0.3
-  m_masking_ratio: 0.3
   multitask: true
   rncloss: false
   lr: 0.0001
-  # Fine-tune encoder LR: null → use training.lr (same as TabResnetWrapper init)
   encoder_lr: null
-  # LambdaLR multipliers (see docs/METHODOLOGY.md): encoder base^(epoch); head base^(epoch // step)
   lr_scheduler_encoder_decay: 0.95
   lr_scheduler_head_decay: 0.5
   lr_scheduler_head_step_epochs: 10
@@ -98,13 +89,12 @@ finetuning:
   lf: 'quantile'
   pert_features: true
   pert_scale: 1.0
-  # Scale jitter on Schlegel E(B-V) only (1.0 = same as other features; 0.0 = no EBV jitter)
   pert_ebv_scale: 1.0
   pert_labels: false
-  ensemble: false
+  ensemble: true
   seed: 42
   pert_seed: 42
-  ensemble_path: 'finetuning-checkpoint-here.pth'
+  ensemble_path: '$SCRATCH/msa/checkpoints/pretrain_latest.pth'
   # Match paper Eq. total loss: lambda_pred * L_pred + lambda_rec * L_rec
   lambda_pred: 0.8
   lambda_rec: 0.2
@@ -112,11 +102,6 @@ finetuning:
   ensemble_size: 20
   # Optional: [Teff, log g, [Fe/H], [alpha/Fe], age, parallax] — up-weight [Fe/H] (index 2) for metal-poor focus
   quantile_label_weights: null
-  # Heteroscedastic pinball: weight ~ 1/(sigma_scaled^2 + floor^2), clamped; only when lf: quantile
-  quantile_use_label_errors: false
-  quantile_sigma_weight_floor: 1.0e-6
-  quantile_sigma_weight_max: 1.0e6
-  quantile_sigma_weight_normalize_batch: true
   # Optional: confident labels + preserve rare [Fe/H] in splits; enable for VMP-focused training
   metal_poor:
     stratify_feh: false
@@ -129,6 +114,6 @@ finetuning:
     augment_fraction: 0.0
 
 saving:
-  model_str: 'masked_stellar_autoencoder_ft_10M.pth'
-  log_file: 'finetune_msa_100_epoch.log'
+  model_str: '$SCRATCH/msa/runs/ft/masked_stellar_autoencoder_ft.pth'
+  log_file: '$SCRATCH/msa/runs/ft/finetune_msa.log'
   checkpoint_interval: 50

@@ -1,0 +1,36 @@
+"""Pure dict logic for eval checkpoint loading."""
+import os
+import sys
+
+import pytest
+
+_repo = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+sys.path.insert(0, os.path.join(_repo, "training"))
+
+from checkpoint_keys import autoencoder_state_dict, prediction_head_state_dict
+
+
+def test_autoencoder_prefers_finetune_key():
+    sd = {"w": 1}
+    ckpt = {"autoencoder_state_dict": sd, "model_state_dict": {"x": 2}}
+    assert autoencoder_state_dict(ckpt) is sd
+
+
+def test_autoencoder_falls_back_to_pretrain_key():
+    sd = {"m": 3}
+    assert autoencoder_state_dict({"model_state_dict": sd}) is sd
+
+
+def test_autoencoder_missing_raises():
+    with pytest.raises(KeyError, match="autoencoder_state_dict"):
+        autoencoder_state_dict({})
+
+
+def test_prediction_head_required():
+    with pytest.raises(KeyError, match="prediction_head_state_dict"):
+        prediction_head_state_dict({"model_state_dict": {}})
+
+
+def test_prediction_head_ok():
+    h = {"h": 1}
+    assert prediction_head_state_dict({"prediction_head_state_dict": h}) is h

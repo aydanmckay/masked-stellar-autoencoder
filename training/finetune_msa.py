@@ -1,152 +1,72 @@
 import yaml
-import h5py
 import argparse
 import torch
-from sklearn.preprocessing import RobustScaler, StandardScaler
-from sklearn.model_selection import train_test_split
-import numpy as np
-from astropy.table import Table
-import pandas as pd
 import random
 import os
 import sys
+import numpy as np
 
-# Add the repo root to Python path
 repo_root = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 sys.path.insert(0, repo_root)
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
+from config_paths import expand_config_paths, ft_checkpoint_paths
+from models.checkpoint_load import torch_load_trusted
 from models.model import make_model, TabResnetWrapper
+from feature_noise import pert_channel_scale_vector
+from finetune_data import prepare_finetune_arrays
+
 
 def main():
 
     parser = argparse.ArgumentParser(description="Train MSA")
     parser.add_argument("--config", type=str, required=True,
                         help="Path to config YAML file")
+    parser.add_argument("--max-train-rows", type=int, default=None,
+                        help="Subsample training rows for pilot runs only")
+    parser.add_argument("--max-valid-rows", type=int, default=None,
+                        help="Subsample validation rows for pilot runs only")
     args = parser.parse_args()
 
-    # load YAML
     with open(args.config, "r") as f:
         config = yaml.safe_load(f)
+    expand_config_paths(config)
 
     if config['finetuning']['ensemble']:
-        seeds = np.random.randint(0, 1000, size=100).tolist()
+        rng = np.random.default_rng(config['finetuning'].get('ensemble_seed', 42))
+        n_ens = int(config['finetuning'].get('ensemble_size', 20))
+        seeds = rng.integers(0, 1000, size=n_ens).tolist()
     else:
         seeds = [config['finetuning']['seed']]
 
-    # loading the finetuning dataset
-    data = Table.read(config['data']['ft_datafile']).to_pandas()
-    errordata = data.copy()
-
-    cols = config['data']['feature_cols']
-    classes = config['data']['classes']
-    error_cols = config['data']['error_cols']
-
-    data = data[classes+cols]
-    errordata = errordata[error_cols]
-    errordata = errordata.fillna(errordata.max())
-
-    trainset, validset, etrainset, evalidset = train_test_split(data.to_numpy(), errordata.to_numpy(), test_size=0.2, random_state=42)
-    validset, testset, evalidset, etestset = train_test_split(validset, evalidset, test_size=0.33, random_state=42)
-
-    # assuming that the layout of the file is label, label error, ..., features
-    num_classes = len(classes)
-    
-    target_train = trainset[:, :num_classes]
-    trainset = trainset[:, num_classes:]
-    target_valid = validset[:, :num_classes]
-    validset = validset[:, num_classes:]
-    target_test = testset[:, :num_classes]
-    testset = testset[:, num_classes:]
-
-    # scaling the targets (individually in case of single task finetuning) and features
-    scalers = [StandardScaler() for _ in range(int(num_classes/2))]
-    labelled_set = []
-    e_labelled_set = []
-    vlabelled_set = []
-    e_vlabelled_set = []
-    
-    for i in range(int(num_classes/2)):
-        labelled_set.append(scalers[i].fit_transform(target_train[:, i*2].reshape(-1, 1)))
-        elabel = target_train[:, i*2+1] / scalers[i].scale_
-        e_labelled_set.append(elabel.reshape(-1, 1))
-        
-        vlabelled_set.append(scalers[i].transform(target_valid[:, i*2].reshape(-1, 1)))
-        velabel = target_valid[:, i*2+1] / scalers[i].scale_
-        e_vlabelled_set.append(velabel.reshape(-1, 1))
-        
-
-    target_set = target_test[:, [i for i in range(num_classes) if i % 2 == 0]]
-
-    try:
-        pos = cols.index("PARALLAX")
-    except ValueError:
-        raise ValueError("PARALLAX column not found in feature columns")
-    
-    scaler = StandardScaler()
-    label = scaler.fit_transform(trainset[:, pos].reshape(-1, 1))
-    elabel = etrainset[:, pos] / scaler.scale_
-    vlabel = scaler.transform(validset[:, pos].reshape(-1, 1))
-    velabel = evalidset[:, pos] / scaler.scale_
-
-    labelled_set.append(label)
-    labelled_set = np.concatenate(labelled_set, axis=1)
-
-    e_labelled_set.append(elabel.reshape(-1, 1))
-    e_labelled_set = np.concatenate(e_labelled_set, axis=1)
-
-    scalers.append(scaler)
-
-    target_set = np.concatenate([target_set, testset[:, pos].reshape(-1, 1)], axis=1)
-    
-    labels = [i for i in range(num_classes) if i % 2 == 0] + ['parallax']
-
-    vlabelled_set.append(vlabel)
-    vlabelled_set = np.concatenate(vlabelled_set, axis=1)
-
-    e_vlabelled_set.append(velabel.reshape(-1, 1))
-    e_vlabelled_set = np.concatenate(e_vlabelled_set, axis=1)
-
-    # Validate data before scaling
-    if np.any(np.isnan(trainset)) or np.any(np.isinf(trainset)):
-        print("Warning: Invalid values in training features before scaling")
-    if np.any(np.isnan(etrainset)) or np.any(np.isinf(etrainset)):
-        print("Warning: Invalid values in training errors before scaling")
-    
-    featurescaler = RobustScaler()
-    featurescaler.fit(trainset)
-    
-    # Validate scaler was fitted properly
-    if not hasattr(featurescaler, 'scale_') or featurescaler.scale_ is None:
-        raise ValueError("Feature scaler failed to fit properly")
-    
-    trainset = featurescaler.transform(trainset)
-    validset = featurescaler.transform(validset)
-    testset = featurescaler.transform(testset)
-    scale_factors = featurescaler.scale_  # This is the IQR used by RobustScaler for each feature
-    
-    # Validate scale factors
-    if np.any(scale_factors <= 0):
-        print("Warning: Zero or negative scale factors detected")
-        scale_factors = np.where(scale_factors <= 0, 1.0, scale_factors)
-    
-    etrainset = etrainset / scale_factors
-    evalidset = evalidset / scale_factors
-    etestset = etestset / scale_factors
-
-    test_stuff = (testset, target_set, scalers, labels)
+    pack = prepare_finetune_arrays(
+        config,
+        max_train_rows=args.max_train_rows,
+        max_valid_rows=args.max_valid_rows,
+    )
+    trainset = pack["trainset"]
+    etrainset = pack["etrainset"]
+    labelled_set = pack["labelled_set"]
+    e_labelled_set = pack["e_labelled_set"]
+    validset = pack["validset"]
+    evalidset = pack["evalidset"]
+    vlabelled_set = pack["vlabelled_set"]
+    e_vlabelled_set = pack["e_vlabelled_set"]
+    scalers = pack["scalers"]
+    cols = pack["feature_cols"]
+    error_cols = pack["error_cols"]
+    recon_cols = pack["recon_cols"]
 
     for seed in seeds:
 
-        random.seed(seed)
-        torch.manual_seed(seed)
+        random.seed(int(seed))
+        torch.manual_seed(int(seed))
 
         blocks_dims = config['model']['layer_dims']
         pt_activ = config['model']['pt_activ_func']
         d_embed = config['model']['rtdl_embed']
         norm = config['model']['norm']
-        decoder_dims = config['model'].get('decoder_dims', None)  # Optional asymmetric decoder
-
-        recon_cols = config['data']['recon_cols']
+        decoder_dims = config['model'].get('decoder_dims', None)
 
         model = make_model(
             len(cols),
@@ -158,31 +78,40 @@ def main():
             decoder_dims=decoder_dims,
         )
 
-        checkpoint = torch.load(config['model']['saved_weights'], map_location=torch.device('cuda' if torch.cuda.is_available() else 'cpu'))
+        checkpoint = torch_load_trusted(
+            config["model"]["saved_weights"],
+            map_location=torch.device("cuda" if torch.cuda.is_available() else "cpu"),
+        )
         model.load_state_dict(checkpoint['model_state_dict'])
     
-        xp_ratio = config['training']['xp_masking_ratio']
-        m_ratio = config['training']['m_masking_ratio']
+        # Use fine-tuning specific mask ratios if available, fallback to 0.3 defaults to optimize XP gradient connections
+        xp_ratio = config['finetuning'].get('xp_masking_ratio', 0.3)
+        m_ratio = config['finetuning'].get('m_masking_ratio', 0.3)
         lr = config['training']['lr']
         wd = config['training']['weight_decay']
         lasso = config['training']['lasso']
         opt = config['training']['optimizer']
         lf = config['training']['loss_fn']
         
-        ft_save_file = config['saving']['model_str']
-        ft_log_file = config['saving']['log_file']
+        ft_save_file, ft_log_file = ft_checkpoint_paths(config, seed)
         ci = config['saving']['checkpoint_interval']
 
         pretrain_file = config['data']['datafile']
 
-        # Initialize the pretraining wrapper
+        pert_ch = pert_channel_scale_vector(
+            cols,
+            pert_ebv_scale=float(config["finetuning"].get("pert_ebv_scale", 1.0)),
+        )
+        pert_scale_ft = float(config["finetuning"].get("pert_scale", 1.0))
+
         wrapper = TabResnetWrapper(
             model=model,
             datafile=pretrain_file,
-            scaler=featurescaler,
+            scaler=pack["featurescaler"],
             feature_cols=cols,
             error_cols=error_cols,
             recon_cols=recon_cols,
+            label_scalers=pack["scalers"],
             xp_masking_ratio=xp_ratio,
             m_masking_ratio=m_ratio,
             latent_size=blocks_dims[-1],
@@ -191,34 +120,39 @@ def main():
             wd=wd,
             lasso=lasso,
             lf=lf,
+            pert_scale=pert_scale_ft,
             ft_save_str=ft_save_file,
             ft_log_file=ft_log_file,
             checkpoint_interval=ci,
+            mask_mixture_xp_full_frac=float(
+                config["training"].get("mask_mixture_xp_full_frac", 0.0)
+            ),
+            pert_channel_scale=pert_ch,
+            scheduler_cosine_t0=int(config["training"].get("scheduler_cosine_t0", 10)),
+            scheduler_cosine_t_mult=int(config["training"].get("scheduler_cosine_t_mult", 2)),
+            scheduler_eta_min_factor=float(
+                config["training"].get("scheduler_eta_min_factor", 0.01)
+            ),
         )
 
-        
-        # Calculate consistency parameters: Pred_scaled = m * Recon_scaled + c
-        # Recon is RobustScaled: x_rob = (x - median) / IQR => x = x_rob * IQR + median
-        # Pred is StandardScaled: x_std = (x - mean) / std => x = x_std * std + mean
-        # x_std = x_rob * (IQR/std) + (median - mean)/std
-        
-        # Get Parallax index in features
         px_feat_idx = cols.index("PARALLAX")
-        
-        # RobustScaler params for Parallax
-        # center_ is median, scale_ is IQR
-        feat_median = featurescaler.center_[px_feat_idx]
-        feat_iqr = featurescaler.scale_[px_feat_idx]
-        
-        # StandardScaler params for Parallax (last scaler in list)
-        label_scaler = scalers[-1] 
-        label_mean = label_scaler.mean_[0]
-        label_std = label_scaler.scale_[0]
-        
-        consistency_m = feat_iqr / label_std
-        consistency_c = (feat_median - label_mean) / label_std
-        
-        print(f"Consistency Params for Parallax: m={consistency_m}, c={consistency_c}")
+        if (
+            pack.get("astrometry_input_policy", "legacy_raw") == "legacy_raw"
+            and pack.get("parallax_target_space", "linear_mas") == "linear_mas"
+        ):
+            feat_median = pack["featurescaler"].center_[px_feat_idx]
+            feat_iqr = pack["featurescaler"].scale_[px_feat_idx]
+            label_scaler = scalers[-1]
+            label_mean = label_scaler.mean_[0]
+            label_std = label_scaler.scale_[0]
+            consistency_m = feat_iqr / label_std
+            consistency_c = (feat_median - label_mean) / label_std
+            print(f"Consistency Params for Parallax: m={consistency_m}, c={consistency_c}")
+        else:
+            print(
+                "Skipping parallax feature/label consistency check "
+                "(non-legacy astrometry input and/or log10 parallax target)."
+            )
 
         wrapper.fit(
             trainset,
@@ -229,11 +163,10 @@ def main():
             eX_val=evalidset,
             y_val=vlabelled_set,
             e_y_val=e_vlabelled_set,
-            num_epochs=config['finetuning']['num_epochs'], # needs to all be part of the config
+            num_epochs=config['finetuning']['num_epochs'],
             mini_batch=config['finetuning']['mini_batch'], 
             linearprobe=config['finetuning']['linearprobe'], 
             maskft=config['finetuning']['mask'],
-            mask_pred=config['finetuning'].get('mask_prediction', None),
             multitask=config['finetuning']['multitask'],
             rncloss=config['finetuning']['rncloss'],
             ftlr=config['finetuning']['lr'],
@@ -241,11 +174,40 @@ def main():
             ftact=config['finetuning']['activ'],
             ftl2=config['finetuning']['l2'],
             ftlf=config['finetuning']['lf'],
-            ftlabeldim=len(labels),
+            ftlabeldim=len(pack["label_names"]),
             pert_features=config['finetuning']['pert_features'],
             pert_labels=config['finetuning']['pert_labels'],
             feature_seed=config['finetuning']['pert_seed'],
-            ensemblepath=config['finetuning']['ensemble_path']
+            ensemblepath=config['finetuning']['ensemble_path'],
+            ft_lambda_pred=float(config['finetuning'].get('lambda_pred', 0.8)),
+            ft_lambda_rec=float(config['finetuning'].get('lambda_rec', 0.2)),
+            ft_quantile_label_weights=config['finetuning'].get('quantile_label_weights'),
+            ft_use_sigma_quantile_weights=bool(
+                config['finetuning'].get('quantile_use_label_errors', False)
+            ),
+            ft_sigma_weight_floor=float(
+                config['finetuning'].get('quantile_sigma_weight_floor', 1e-6)
+            ),
+            ft_sigma_weight_max=float(
+                config['finetuning'].get('quantile_sigma_weight_max', 1e6)
+            ),
+            ft_sigma_weight_normalize_batch=bool(
+                config['finetuning'].get('quantile_sigma_weight_normalize_batch', True)
+            ),
+            ft_encoder_lr=(
+                float(config["finetuning"]["encoder_lr"])
+                if config["finetuning"].get("encoder_lr") is not None
+                else None
+            ),
+            ft_scheduler_encoder_decay=float(
+                config["finetuning"].get("lr_scheduler_encoder_decay", 0.95)
+            ),
+            ft_scheduler_head_decay=float(
+                config["finetuning"].get("lr_scheduler_head_decay", 0.5)
+            ),
+            ft_scheduler_head_step_epochs=int(
+                config["finetuning"].get("lr_scheduler_head_step_epochs", 10)
+            ),
         )
 
 if __name__ == '__main__':

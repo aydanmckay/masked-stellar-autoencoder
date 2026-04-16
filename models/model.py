@@ -1,4 +1,6 @@
 # loading the packages
+from typing import Optional
+
 import torch
 from torch import Tensor
 import torch.nn as nn
@@ -23,6 +25,7 @@ import math
 from sklearn.preprocessing import StandardScaler, RobustScaler
 
 from .blocks import TabResnet
+from .checkpoint_load import torch_load_trusted
 
 class MaskedGaussianNLLLoss(nn.Module):
     def __init__(self, eps=1e-6, reduction='mean'):
@@ -331,12 +334,10 @@ class EncoderDecoderLoss(nn.Module):
                 raise ValueError("Weight tensor w is required for wmae loss but got None")
             reconstruction_errors = w * abs(errors)
 
-        # features_loss = torch.matmul(reconstruction_errors, 1 / x_true_stds)
-        features_loss = reconstruction_errors
-        nb_reconstructed_variables = torch.sum(mask, dim=0)
-        features_loss_norm = features_loss / (nb_reconstructed_variables + self.eps)
-    
-        loss = torch.mean(features_loss_norm)
+        # Mean squared (or absolute) error over masked elements only — avoids
+        # per-column divisors that up-weight rarely masked features in a batch.
+        denom = mask.to(dtype=reconstruction_errors.dtype).sum().clamp_min(self.eps)
+        loss = reconstruction_errors.sum() / denom
 
         return loss
 
@@ -373,38 +374,70 @@ class PredictionHead(nn.Module):
 
         return torch.stack([y_lower, y_median, y_upper], dim=2)
 
-def quantile_loss(preds: torch.Tensor, target: torch.Tensor, quantiles: torch.Tensor) -> torch.Tensor:
+def quantile_loss(
+    preds: torch.Tensor,
+    target: torch.Tensor,
+    quantiles: torch.Tensor,
+    label_weights: Optional[Tensor] = None,
+    sample_weight: Optional[Tensor] = None,
+) -> torch.Tensor:
     """
-    Calculates the quantile loss for a batch of predictions and multiple labels.
+    Pinball / quantile loss. Optionally up-weight rare labels (e.g. [Fe/H]) so
+    solar-metallicity stars do not dominate the gradient.
 
-    Args:
-        preds (torch.Tensor): The model's predictions. Shape: (batch_size, num_labels, num_quantiles)
-        target (torch.Tensor): The true values. Shape: (batch_size, num_labels)
-        quantiles (torch.Tensor): The quantiles to be calculated. Shape: (num_quantiles,)
-
-    Returns:
-        torch.Tensor: The mean loss for the batch. A single scalar value.
+    ``sample_weight`` (B, L) scales each label per example, e.g. inverse variance
+    from scaled label uncertainties; combined multiplicatively with ``label_weights``.
     """
-    # Create mask for valid (non-NaN) targets
-    mask = ~torch.isnan(target)  # Shape: (batch_size, num_labels)
-
-    # Expand target to match preds: (batch_size, num_labels, num_quantiles)
+    mask = ~torch.isnan(target)
     target_expanded = target.unsqueeze(2).expand_as(preds)
-
-    # Expand quantiles to match target shape: (1, 1, num_quantiles)
     quantiles = quantiles.view(1, 1, -1)
-
-    # Compute quantile loss
     error = target_expanded - preds
     loss = torch.max((quantiles - 1) * error, quantiles * error)
-
-    # Expand mask to 3D to match loss shape: (batch_size, num_labels, num_quantiles)
     mask_expanded = mask.unsqueeze(2).expand_as(loss)
+    w_eff = mask_expanded.to(dtype=loss.dtype)
+    if label_weights is not None:
+        w_lab = label_weights.to(device=loss.device, dtype=loss.dtype).view(1, -1, 1).expand_as(loss)
+        w_eff = w_eff * w_lab
+    if sample_weight is not None:
+        w_s = sample_weight.to(device=loss.device, dtype=loss.dtype).unsqueeze(2).expand_as(loss)
+        w_eff = w_eff * w_s
+    if label_weights is None and sample_weight is None:
+        return loss[mask_expanded].mean()
+    return (loss * w_eff).sum() / w_eff.sum().clamp_min(1e-8)
 
-    # Apply mask and compute mean
-    loss = loss[mask_expanded]
 
-    return loss.mean()
+def _sigma_pinball_weights(
+    sigma_scaled: Tensor,
+    y: Tensor,
+    floor: float,
+    max_w: float,
+    normalize_batch: bool,
+) -> Tensor:
+    """Inverse-variance style weights (B, L) in scaled label-error space."""
+    sig = torch.nan_to_num(sigma_scaled, nan=1.0, posinf=1.0, neginf=1.0)
+    w = 1.0 / (sig * sig + float(floor) ** 2)
+    w = w.clamp(max=float(max_w))
+    if normalize_batch:
+        w = w / (w.mean(dim=0, keepdim=True).clamp_min(1e-8))
+    w = torch.where(torch.isnan(y), torch.zeros_like(w), w)
+    return w
+
+
+def _reduce_finetune_prediction(y_raw: Tensor, ftlf: str, linearprobe: bool):
+    """
+    Non-quantile losses need a single (B, L) prediction. Quantile head returns (B, L, 3).
+    Legacy code paths may return a (mean, err) tuple for Gaussian NLL.
+    """
+    if ftlf == "quantile":
+        return y_raw, None
+    if linearprobe:
+        return y_raw, None
+    if isinstance(y_raw, Tensor) and y_raw.dim() == 3:
+        return y_raw[..., 1], None
+    if isinstance(y_raw, (tuple, list)) and len(y_raw) >= 2:
+        return y_raw[0], y_raw[1]
+    return y_raw, None
+
 
 # creating a training wrapper for the algorithm
 class TabResnetWrapper(BaseEstimator):
@@ -415,6 +448,7 @@ class TabResnetWrapper(BaseEstimator):
                  feature_cols,
                  error_cols,
                  recon_cols,
+                 label_scalers=None,
                  latent_size=256,
                  xp_masking_ratio=0.9,
                  m_masking_ratio=0.9,
@@ -430,6 +464,11 @@ class TabResnetWrapper(BaseEstimator):
                  checkpoint_interval=None,
                  pert_features=False,
                  pert_scale=1.0,
+                 mask_mixture_xp_full_frac: float = 0.0,
+                 pert_channel_scale: Optional[np.ndarray] = None,
+                 scheduler_cosine_t0: int = 10,
+                 scheduler_cosine_t_mult: int = 2,
+                 scheduler_eta_min_factor: float = 0.01,
                  ):
         
         '''
@@ -437,7 +476,7 @@ class TabResnetWrapper(BaseEstimator):
         periodic embeddings
         scaling the coefficients with the RobustScaler
         changing the mask value to -9999
-        exponential scheduler instead of stepLR
+        cosine LR schedule with warm restarts (see ``scheduler_cosine_*`` on the wrapper)
         different masking ratios
 
         '''
@@ -455,6 +494,7 @@ class TabResnetWrapper(BaseEstimator):
             raise ValueError("datafile must be an open HDF5 file or file path")
         
         self.featurescaler = scaler
+        self.label_scalers = label_scalers
         if hasattr(self.featurescaler, 'scale_') and self.featurescaler.scale_ is not None:
             self.scale_factors = self.featurescaler.scale_  # This is the IQR used by RobustScaler for each feature
         else:
@@ -465,6 +505,7 @@ class TabResnetWrapper(BaseEstimator):
         self.diff = len(feature_cols) - len(recon_cols)
         self.xp_masking_ratio = xp_masking_ratio
         self.m_masking_ratio = m_masking_ratio
+        self.mask_mixture_xp_full_frac = float(mask_mixture_xp_full_frac)
         self.lr = lr
         self.opt = optimizer
         self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
@@ -479,8 +520,35 @@ class TabResnetWrapper(BaseEstimator):
         self.pt_log_file = pt_log_file
         self.ft_log_file = ft_log_file
         self.checkpoint_interval = checkpoint_interval
+        self.scheduler_cosine_t0 = int(scheduler_cosine_t0)
+        self.scheduler_cosine_t_mult = int(scheduler_cosine_t_mult)
+        self.scheduler_eta_min_factor = float(scheduler_eta_min_factor)
         self.pert_features = pert_features
         self.pert_scale = pert_scale
+        nfeat = len(feature_cols)
+        if pert_channel_scale is None:
+            self._pert_channel_scale_np = np.ones(nfeat, dtype=np.float32)
+        else:
+            pc = np.asarray(pert_channel_scale, dtype=np.float32).reshape(-1)
+            if pc.shape[0] != nfeat:
+                raise ValueError(
+                    f"pert_channel_scale length {pc.shape[0]} != len(feature_cols)={nfeat}"
+                )
+            self._pert_channel_scale_np = pc
+        self.lp: Optional[nn.Linear] = None
+        self.ft: Optional[PredictionHead] = None
+
+    def _pert_noise(self, X_batch: Tensor, eX_batch: Tensor) -> Tensor:
+        """Gaussian noise scaled by per-feature errors and ``pert_channel_scale``."""
+        noise = torch.randn_like(X_batch) * eX_batch * self.pert_scale
+        w = torch.as_tensor(
+            self._pert_channel_scale_np,
+            device=X_batch.device,
+            dtype=noise.dtype,
+        )
+        if w.dim() != 1 or w.shape[0] != X_batch.shape[1]:
+            raise RuntimeError("pert_channel_scale length must match feature dimension")
+        return noise * w.unsqueeze(0)
 
     def _apply_mask(self, X, col_start_fixed=5, col_end_fixed=115, col_start_random=115):
         """
@@ -511,7 +579,15 @@ class TabResnetWrapper(BaseEstimator):
     
         mask_fixed = torch.zeros_like(X, dtype=torch.bool).to(self.device)
         mask_fixed[row_indices, col_start_fixed:col_end_fixed] = True
-    
+
+        # Extra rows with XP fully masked (mixture component toward XP-off at inference).
+        mf = getattr(self, "mask_mixture_xp_full_frac", 0.0) or 0.0
+        if mf > 0.0:
+            n_add = int(mf * X.shape[0])
+            if n_add > 0:
+                add_idx = torch.randperm(X.shape[0], device=self.device)[:n_add]
+                mask_fixed[add_idx, col_start_fixed:col_end_fixed] = True
+
         # random element-wise masking for cols [0:5] and [115:] - phot bands
         mask_random = torch.zeros_like(X, dtype=torch.bool).to(self.device)
     
@@ -635,10 +711,18 @@ class TabResnetWrapper(BaseEstimator):
                 {'params': no_decay, 'weight_decay': 0.0}
             ], lr=self.lr, momentum=0.9)
         # Use cosine annealing with warm restarts for better convergence
-        scheduler = optim.lr_scheduler.CosineAnnealingWarmRestarts(optimizer, T_0=10, T_mult=2, eta_min=self.lr * 0.01)
+        scheduler = optim.lr_scheduler.CosineAnnealingWarmRestarts(
+            optimizer,
+            T_0=self.scheduler_cosine_t0,
+            T_mult=self.scheduler_cosine_t_mult,
+            eta_min=self.lr * self.scheduler_eta_min_factor,
+        )
 
         # Configure logging with proper file handling
         os.makedirs(os.path.dirname(self.pt_log_file) if os.path.dirname(self.pt_log_file) else '.', exist_ok=True)
+        _pt_sd = os.path.dirname(self.pt_save_str)
+        if _pt_sd:
+            os.makedirs(_pt_sd, exist_ok=True)
         logging.basicConfig(filename=self.pt_log_file, 
                             level=logging.INFO, 
                             format="%(asctime)s - Sub-Epoch: %(message)s",
@@ -653,7 +737,7 @@ class TabResnetWrapper(BaseEstimator):
         pretrained_epoch = 0
 
         if pretrained is not None:
-            checkpoint = torch.load(pretrained)
+            checkpoint = torch_load_trusted(pretrained)
             self.model.load_state_dict(checkpoint['model_state_dict'])
             optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
             scheduler.load_state_dict(checkpoint['scheduler_state_dict'])
@@ -695,8 +779,7 @@ class TabResnetWrapper(BaseEstimator):
                     for X_batch,eX_batch in train_loader:
                         # Apply data augmentation if enabled (add Gaussian noise scaled by errors)
                         if self.pert_features:
-                            noise = torch.randn_like(X_batch) * eX_batch * self.pert_scale
-                            X_batch = X_batch + noise
+                            X_batch = X_batch + self._pert_noise(X_batch, eX_batch)
 
                         # Apply masking to training data batch
                         X_masked, mask, nanmask = self._apply_mask(X_batch)
@@ -708,7 +791,8 @@ class TabResnetWrapper(BaseEstimator):
                         # Combine masks: reconstruct only positions that were (1) originally valid AND (2) artificially masked
                         reconstruction_mask = mask[:, :-self.diff] & nanmask[:, :-self.diff]
                         l1_norm = z.abs().sum()
-                        loss = self.loss_fn(X_batch[:,:-self.diff], X_reconstructed, reconstruction_mask, eX_batch[:, :-self.diff]) + self.lasso * l1_norm
+                        reconstruction_w = 1.0 / (eX_batch[:, :-self.diff] ** 2 + 1e-8)
+                        loss = self.loss_fn(X_batch[:,:-self.diff], X_reconstructed, reconstruction_mask, reconstruction_w) + self.lasso * l1_norm
 
                         optimizer.zero_grad()
                         loss.backward()
@@ -853,6 +937,17 @@ class TabResnetWrapper(BaseEstimator):
             pert_labels=False,
             feature_seed=42,
             ensemblepath=None,
+            ft_lambda_pred=0.8,
+            ft_lambda_rec=0.2,
+            ft_quantile_label_weights: Optional[list] = None,
+            ft_use_sigma_quantile_weights: bool = False,
+            ft_sigma_weight_floor: float = 1e-6,
+            ft_sigma_weight_max: float = 1e6,
+            ft_sigma_weight_normalize_batch: bool = True,
+            ft_encoder_lr: Optional[float] = None,
+            ft_scheduler_encoder_decay: float = 0.95,
+            ft_scheduler_head_decay: float = 0.5,
+            ft_scheduler_head_step_epochs: int = 10,
            ):
         
         X_train = torch.Tensor(X_train).to(self.device)
@@ -871,6 +966,16 @@ class TabResnetWrapper(BaseEstimator):
         elif ftact == 'gelu':
             ftactivationfunc = nn.GELU()
 
+        if linearprobe:
+            if ftlf == "quantile":
+                raise ValueError("linearprobe requires finetuning lf 'mse' or 'mae', not 'quantile'")
+            if ftlf in ("gnll", "wgnll", "wmse"):
+                raise ValueError(f"linearprobe does not support loss type {ftlf!r}")
+            if multitask:
+                raise ValueError("linearprobe with multitask is unsupported (full autoencoder is frozen)")
+            if rncloss:
+                raise ValueError("linearprobe with rncloss is unsupported")
+
         if (ftlf == 'wmse') or (ftlf == 'wgnll'):
             criterion = WeightedMaskedMSELoss()
         elif ftlf == 'mse':
@@ -883,48 +988,84 @@ class TabResnetWrapper(BaseEstimator):
 
         if (ftlf == 'gnll') or (ftlf == 'wgnll'):
             criterion2 = MaskedGaussianNLLLoss()
-            
-        self.ft = PredictionHead(self.latent_size,ftlabeldim,ftactivationfunc).to(self.device)
+
+        self.lp = None
+        if linearprobe:
+            self.lp = nn.Linear(self.latent_size, ftlabeldim).to(self.device)
+            nn.init.xavier_uniform_(self.lp.weight)
+            nn.init.zeros_(self.lp.bias)
+            self.ft = None
+        else:
+            self.ft = PredictionHead(self.latent_size, ftlabeldim, ftactivationfunc).to(self.device)
 
         try:
-            state_dict = torch.load(ensemblepath, map_location=self.device)
-            
-            # assign to models
+            state_dict = torch_load_trusted(ensemblepath, map_location=self.device)
             self.model.load_state_dict(state_dict['autoencoder_state_dict'])
-            self.ft.load_state_dict(state_dict['prediction_head_state_dict'])
+            if not linearprobe:
+                self.ft.load_state_dict(state_dict['prediction_head_state_dict'])
             print('loaded checkpoint')
-        except:
-            self.ft.apply(self.init_weights_gelu)
+        except Exception:
+            if not linearprobe:
+                self.ft.apply(self.init_weights_gelu)
             print('restarting fine-tuning')
 
-        if ftopt == 'adam':
-            optimizer = optim.Adam([
-                {'params': self.model.parameters(), 'lr': 1e-5},
-                {'params': self.ft.parameters(), 'lr': ftlr, 'weight_decay': ftl2}
-            ])
-        elif ftopt == 'sgd':
-            optimizer = optim.SGD([
-                {'params': self.model.parameters(), 'lr': 1e-5},
-                {'params': self.ft.parameters(), 'lr': ftlr, 'momentum': 0.9, 'weight_decay': ftl2}
-            ])
-        elif ftopt == 'adamw':
-            optimizer = optim.AdamW([
-                {'params': self.model.parameters(), 'lr': 1e-5},
-                {'params': self.ft.parameters(), 'lr': ftlr, 'weight_decay': ftl2}
-            ])
+        if ft_quantile_label_weights is not None:
+            if len(ft_quantile_label_weights) != ftlabeldim:
+                raise ValueError(
+                    f"ft_quantile_label_weights length {len(ft_quantile_label_weights)} "
+                    f"does not match ftlabeldim={ftlabeldim}"
+                )
+            q_weight_t = torch.tensor(
+                ft_quantile_label_weights, dtype=torch.float32, device=self.device
+            )
+        else:
+            q_weight_t = None
 
-        # Define lambda functions for each group's schedule
-        encoder_lambda = lambda epoch: 0.95 ** epoch         # Slow decay
-        head_lambda = lambda epoch: 0.5 ** (epoch // 10)     # Step decay every 10 epochs
+        enc_lr = float(ft_encoder_lr) if ft_encoder_lr is not None else float(self.lr)
+        head_step = max(1, int(ft_scheduler_head_step_epochs))
+        head_lambda = lambda epoch, h=ft_scheduler_head_decay, s=head_step: h ** (epoch // s)
+        encoder_lambda = lambda epoch, b=ft_scheduler_encoder_decay: b ** epoch
 
-        # Scheduler applied to parameter groups
-        scheduler = optim.lr_scheduler.LambdaLR(optimizer, lr_lambda=[encoder_lambda, head_lambda])
+        if linearprobe:
+            for p in self.model.parameters():
+                p.requires_grad = False
+            if ftopt == 'adam':
+                optimizer = optim.Adam(self.lp.parameters(), lr=ftlr, weight_decay=ftl2)
+            elif ftopt == 'sgd':
+                optimizer = optim.SGD(self.lp.parameters(), lr=ftlr, momentum=0.9, weight_decay=ftl2)
+            elif ftopt == 'adamw':
+                optimizer = optim.AdamW(self.lp.parameters(), lr=ftlr, weight_decay=ftl2)
+            else:
+                raise ValueError(f"Unknown ftopt {ftopt!r}")
+            scheduler = optim.lr_scheduler.LambdaLR(optimizer, lr_lambda=head_lambda)
+        else:
+            if ftopt == 'adam':
+                optimizer = optim.Adam([
+                    {'params': self.model.parameters(), 'lr': enc_lr},
+                    {'params': self.ft.parameters(), 'lr': ftlr, 'weight_decay': ftl2}
+                ])
+            elif ftopt == 'sgd':
+                optimizer = optim.SGD([
+                    {'params': self.model.parameters(), 'lr': enc_lr},
+                    {'params': self.ft.parameters(), 'lr': ftlr, 'momentum': 0.9, 'weight_decay': ftl2}
+                ])
+            elif ftopt == 'adamw':
+                optimizer = optim.AdamW([
+                    {'params': self.model.parameters(), 'lr': enc_lr},
+                    {'params': self.ft.parameters(), 'lr': ftlr, 'weight_decay': ftl2}
+                ])
+            else:
+                raise ValueError(f"Unknown ftopt {ftopt!r}")
+            scheduler = optim.lr_scheduler.LambdaLR(optimizer, lr_lambda=[encoder_lambda, head_lambda])
 
         running_ft_loss = []
         running_ft_validation_loss = []
         
         # Configure logging with proper file handling
         os.makedirs(os.path.dirname(self.ft_log_file) if os.path.dirname(self.ft_log_file) else '.', exist_ok=True)
+        _ft_sd = os.path.dirname(self.ft_save_str)
+        if _ft_sd:
+            os.makedirs(_ft_sd, exist_ok=True)
         logging.basicConfig(filename=self.ft_log_file, 
                             level=logging.INFO, 
                             format="%(asctime)s - Sub-Epoch: %(message)s",
@@ -951,39 +1092,58 @@ class TabResnetWrapper(BaseEstimator):
                 eX_batch = batch[1]
                 y_batch = batch[2]
 
-                # Apply masking to input features batch
+                # Apply masking / feature noise (torch — not random.gauss, which only accepts scalars)
                 if maskft and pert_features:
-                    X_masked, mask, nanmask = self._apply_mask(random.gauss(mu=X_batch, sigma=eX_batch))
+                    X_masked, mask, nanmask = self._apply_mask(
+                        X_batch + self._pert_noise(X_batch, eX_batch)
+                    )
                 elif pert_features and not maskft:
-                    X_masked = random.gauss(mu=X_batch, sigma=eX_batch)
+                    X_masked = X_batch + self._pert_noise(X_batch, eX_batch)
+                    mask = torch.zeros_like(X_batch, dtype=torch.bool, device=X_batch.device)
+                    nanmask = ~torch.isnan(X_batch)
                 elif maskft and not pert_features:
                     X_masked, mask, nanmask = self._apply_mask(X_batch)
                 else:
                     X_masked = X_batch.clone()
+                    mask = torch.zeros_like(X_batch, dtype=torch.bool, device=X_batch.device)
+                    nanmask = ~torch.isnan(X_batch)
 
                 if pert_labels:
-                    y_batch = random.gauss(mu=y_batch, sigma=batch[3])
+                    y_noise = torch.randn_like(y_batch, device=y_batch.device) * batch[3]
+                    y_batch = y_batch + y_noise
 
                 if linearprobe:
-                    # Forward pass (classification output is used for fitting)
                     encoded = self.model.encoder(X_masked)
-                    y_pred = self.lp(encoded)
-                else: 
+                    y_raw = self.lp(encoded)
+                else:
                     encoded = self.model.encoder(X_masked)
-                    y_pred = self.ft(encoded)
+                    y_raw = self.ft(encoded)
 
-                if ftlf != 'quantile':
-                    y_pred_err = y_pred[1]
-                    y_pred = y_pred[0]
-                    
+                if ftlf == 'quantile':
+                    y_head = y_raw
+                    y_pred_err = None
+                else:
+                    y_head, y_pred_err = _reduce_finetune_prediction(y_raw, ftlf, linearprobe)
+
                 # Compute loss
                 if (ftlf == 'wmse') or (ftlf == 'wgnll'):
-                    loss = criterion(y_batch, y_pred, 1/(batch[3]+1e-5)**2)
+                    loss = criterion(y_batch, y_head, 1/(batch[3]+1e-5)**2)
                 elif (ftlf == 'mse') or (ftlf == 'mae'):
-                    loss = criterion(y_batch, y_pred)  # Assuming class labels are integers
+                    loss = criterion(y_batch, y_head)
                 elif ftlf == 'quantile':
                     quantiles = torch.tensor([0.16, 0.5, 0.84], device=self.device)
-                    loss = quantile_loss(y_pred, y_batch, quantiles)
+                    sw = None
+                    if ft_use_sigma_quantile_weights:
+                        sw = _sigma_pinball_weights(
+                            batch[3],
+                            y_batch,
+                            ft_sigma_weight_floor,
+                            ft_sigma_weight_max,
+                            ft_sigma_weight_normalize_batch,
+                        )
+                    loss = quantile_loss(
+                        y_head, y_batch, quantiles, q_weight_t, sample_weight=sw
+                    )
                 else:
                     loss = 0
 
@@ -991,10 +1151,26 @@ class TabResnetWrapper(BaseEstimator):
                     X_reconstructed, _ = self.model(X_masked)
                     # Combine masks: reconstruct only positions that were (1) originally valid AND (2) artificially masked
                     reconstruction_mask = mask[:, :-self.diff] & nanmask[:, :-self.diff]
-                    loss += self.loss_fn(X_batch[:, :-self.diff], X_reconstructed, reconstruction_mask, eX_batch[:, :-self.diff])
+                    reconstruction_w = 1.0 / (eX_batch[:, :-self.diff] ** 2 + 1e-8)
+                    rec = self.loss_fn(
+                        X_batch[:, :-self.diff],
+                        X_reconstructed,
+                        reconstruction_mask,
+                        reconstruction_w,
+                    )
+                    loss = ft_lambda_pred * loss + ft_lambda_rec * rec
 
                 if rncloss:
-                    features = torch.stack((y_pred, y_pred.clone()), dim=1)  # [bs, 2, feat_dim]
+                    if pert_features:
+                        X_masked_2_in = X_batch + self._pert_noise(X_batch, eX_batch)
+                    else:
+                        X_masked_2_in = X_batch.clone()
+                    if maskft:
+                        X_masked_2, _, _ = self._apply_mask(X_masked_2_in)
+                    else:
+                        X_masked_2 = X_masked_2_in
+                    encoded_2 = self.model.encoder(X_masked_2)
+                    features = torch.stack((encoded, encoded_2), dim=1)  # [bs, 2, latent]
                     try:
                         loss += rnc(features, y_batch)
                     except RuntimeError as e:
@@ -1002,12 +1178,15 @@ class TabResnetWrapper(BaseEstimator):
                         print(torch.cuda.memory_summary())
 
                 if (ftlf == 'gnll') or (ftlf == 'wgnll'):
-                    loss += criterion2(y_pred, y_batch, torch.ones_like(y_pred_err), torch.ones_like(batch[3]))
-                
+                    loss += criterion2(y_head, y_batch, torch.ones_like(y_pred_err), torch.ones_like(batch[3]))
+
                 optimizer.zero_grad()
                 loss.backward()
-                # Clip gradients to prevent exploding gradients
-                torch.nn.utils.clip_grad_norm_(list(self.model.parameters()) + list(self.ft.parameters()), max_norm=1.0)
+                if linearprobe:
+                    probe_params = list(self.lp.parameters())
+                else:
+                    probe_params = list(self.model.parameters()) + list(self.ft.parameters())
+                torch.nn.utils.clip_grad_norm_(probe_params, max_norm=1.0)
                 optimizer.step()
                 
                 epoch_loss += loss.item()
@@ -1030,22 +1209,44 @@ class TabResnetWrapper(BaseEstimator):
                     ftlf=ftlf,
                     rncloss=rncloss,
                     ftlabeldim=ftlabeldim,
+                    ft_lambda_pred=ft_lambda_pred,
+                    ft_lambda_rec=ft_lambda_rec,
+                    ft_quantile_label_weights=ft_quantile_label_weights,
+                    ft_use_sigma_quantile_weights=ft_use_sigma_quantile_weights,
+                    ft_sigma_weight_floor=ft_sigma_weight_floor,
+                    ft_sigma_weight_max=ft_sigma_weight_max,
+                    ft_sigma_weight_normalize_batch=ft_sigma_weight_normalize_batch,
                 )
                 running_ft_validation_loss.append(validation_loss)
 
                 logging.info(f"Validation Loss: {validation_loss}")
 
-            torch.save({'autoencoder_state_dict': self.model.state_dict(),
-                        'prediction_head_state_dict': self.ft.state_dict()},
-                        self.ft_save_str)
+            head_sd = self.lp.state_dict() if linearprobe else self.ft.state_dict()
+            torch.save(
+                {
+                    'autoencoder_state_dict': self.model.state_dict(),
+                    'prediction_head_state_dict': head_sd,
+                    'linear_probe': bool(linearprobe),
+                    'featurescaler': self.featurescaler,
+                    'label_scalers': getattr(self, 'label_scalers', None),
+                },
+                self.ft_save_str,
+            )
 
             if self.checkpoint_interval is not None:
                 if (epoch+1) % self.checkpoint_interval == 0:
-                    torch.save({'autoencoder_state_dict': self.model.state_dict(),
-                                'prediction_head_state_dict': self.ft.state_dict()},
-                                self.ft_save_str.split('.')[0]+'_checkpoint_'+str(self.checkpoint_interval)+'.pth')
+                    torch.save(
+                        {
+                            'autoencoder_state_dict': self.model.state_dict(),
+                            'prediction_head_state_dict': head_sd,
+                            'linear_probe': bool(linearprobe),
+                            'featurescaler': self.featurescaler,
+                            'label_scalers': getattr(self, 'label_scalers', None),
+                        },
+                        self.ft_save_str.split('.')[0]+'_checkpoint_'+str(self.checkpoint_interval)+'.pth',
+                    )
 
-    def validate_fit(self, X_val, eX_val, y_val, e_y_val=None, mini_batch=32, linearprobe=False, maskft=False, multitask=False, ftlf='mse', rncloss=False, ftlabeldim=5):
+    def validate_fit(self, X_val, eX_val, y_val, e_y_val=None, mini_batch=32, linearprobe=False, maskft=False, multitask=False, ftlf='mse', rncloss=False, ftlabeldim=5, ft_lambda_pred=0.8, ft_lambda_rec=0.2, ft_quantile_label_weights: Optional[list] = None, ft_use_sigma_quantile_weights: bool = False, ft_sigma_weight_floor: float = 1e-6, ft_sigma_weight_max: float = 1e6, ft_sigma_weight_normalize_batch: bool = True):
         self.model.eval()
         if linearprobe:
             self.lp.eval()
@@ -1076,6 +1277,18 @@ class TabResnetWrapper(BaseEstimator):
         if (ftlf == 'gnll') or (ftlf == 'wgnll'):
             criterion2 = MaskedGaussianNLLLoss()
 
+        if ft_quantile_label_weights is not None:
+            if len(ft_quantile_label_weights) != ftlabeldim:
+                raise ValueError(
+                    f"ft_quantile_label_weights length {len(ft_quantile_label_weights)} "
+                    f"does not match ftlabeldim={ftlabeldim}"
+                )
+            q_weight_t = torch.tensor(
+                ft_quantile_label_weights, dtype=torch.float32, device=self.device
+            )
+        else:
+            q_weight_t = None
+
         with torch.no_grad():
             for batch in val_loader:
 
@@ -1083,32 +1296,45 @@ class TabResnetWrapper(BaseEstimator):
                 eX_batch = batch[1]
                 y_batch = batch[2]
 
-                # Apply masking to input features batch
+                # Apply masking to input features batch (define mask/nanmask whenever multitask may use them)
                 if maskft:
                     X_masked, mask, nanmask = self._apply_mask(X_batch)
                 else:
                     X_masked = X_batch.clone()
+                    mask = torch.zeros_like(X_batch, dtype=torch.bool, device=X_batch.device)
+                    nanmask = ~torch.isnan(X_batch)
 
                 if linearprobe:
-                    # Forward pass (classification output is used for fitting)
-                    encoded  = self.model.encoder(X_masked)
-                    y_pred = self.lp(encoded)
-                else: 
                     encoded = self.model.encoder(X_masked)
-                    y_pred = self.ft(encoded)
+                    y_raw = self.lp(encoded)
+                else:
+                    encoded = self.model.encoder(X_masked)
+                    y_raw = self.ft(encoded)
 
-                if ftlf != 'quantile':
-                    y_pred_err = y_pred[1]
-                    y_pred = y_pred[0]
-                    
-                # Compute loss
+                if ftlf == 'quantile':
+                    y_head = y_raw
+                    y_pred_err = None
+                else:
+                    y_head, y_pred_err = _reduce_finetune_prediction(y_raw, ftlf, linearprobe)
+
                 if (ftlf == 'wmse') or (ftlf == 'wgnll'):
-                    loss = criterion(y_batch, y_pred, 1/(batch[3]+1e-5)**2)
+                    loss = criterion(y_batch, y_head, 1/(batch[3]+1e-5)**2)
                 elif (ftlf == 'mse') or (ftlf == 'mae'):
-                    loss = criterion(y_batch, y_pred)  # Assuming class labels are integers
+                    loss = criterion(y_batch, y_head)
                 elif ftlf == 'quantile':
                     quantiles = torch.tensor([0.16, 0.5, 0.84], device=self.device)
-                    loss = quantile_loss(y_pred, y_batch, quantiles)
+                    sw = None
+                    if ft_use_sigma_quantile_weights:
+                        sw = _sigma_pinball_weights(
+                            batch[3],
+                            y_batch,
+                            ft_sigma_weight_floor,
+                            ft_sigma_weight_max,
+                            ft_sigma_weight_normalize_batch,
+                        )
+                    loss = quantile_loss(
+                        y_head, y_batch, quantiles, q_weight_t, sample_weight=sw
+                    )
                 else:
                     loss = 0
 
@@ -1116,18 +1342,32 @@ class TabResnetWrapper(BaseEstimator):
                     X_reconstructed, _ = self.model(X_masked)
                     # Combine masks: reconstruct only positions that were (1) originally valid AND (2) artificially masked
                     reconstruction_mask = mask[:, :-self.diff] & nanmask[:, :-self.diff]
-                    loss += self.loss_fn(X_batch[:, :-self.diff], X_reconstructed, reconstruction_mask, eX_batch[:, :-self.diff])
+                    reconstruction_w = 1.0 / (eX_batch[:, :-self.diff] ** 2 + 1e-8)
+                    rec = self.loss_fn(
+                        X_batch[:, :-self.diff],
+                        X_reconstructed,
+                        reconstruction_mask,
+                        reconstruction_w,
+                    )
+                    loss = ft_lambda_pred * loss + ft_lambda_rec * rec
 
                 if rncloss:
-                    features = torch.stack((y_pred, y_pred.clone()), dim=1)  # [bs, 2, feat_dim]
+                    if maskft:
+                        X_masked_2, _, _ = self._apply_mask(X_batch)
+                    else:
+                        X_masked_2 = X_batch.clone()
+                    encoded_2 = self.model.encoder(X_masked_2)
+                    features = torch.stack((encoded, encoded_2), dim=1)  # [bs, 2, latent]
                     try:
-                        loss += rnc(features, y_batch)
+                        val_loss += rnc(features, y_batch).item()
                     except RuntimeError as e:
                         print(e)
-                        print(torch.cuda.memory_summary())
+                    # We continue after val_loss evaluation
 
                 if (ftlf == 'gnll') or (ftlf == 'wgnll'):
-                    loss += criterion2(y_pred, y_batch, torch.ones_like(y_pred_err), torch.ones_like(batch[3]))
+                    if y_pred_err is None:
+                        raise RuntimeError("Gaussian NLL path requires a (mean, logvar) tuple head; not supported for quantile head")
+                    loss += criterion2(y_head, y_batch, torch.ones_like(y_pred_err), torch.ones_like(batch[3]))
 
                 val_loss += loss.item()
             

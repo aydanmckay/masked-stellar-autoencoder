@@ -10,6 +10,8 @@ import sys
 repo_root = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 sys.path.insert(0, repo_root)
 
+from config_paths import expand_config_paths
+from feature_noise import pert_channel_scale_vector
 from models.model import make_model, TabResnetWrapper
 
 def main():
@@ -22,7 +24,8 @@ def main():
     # load YAML
     with open(args.config, "r") as f:
         config = yaml.safe_load(f)
-    
+    expand_config_paths(config)
+
     # loading the pretraining file to pass to the wrapper
     pretrain_file = h5py.File(config['data']['datafile'])
 
@@ -82,6 +85,9 @@ def main():
     lf = config['training']['loss_fn']
     pert_features = config['training'].get('pert_features', False)  # Optional data augmentation
     pert_scale = config['training'].get('pert_scale', 1.0)  # Noise scale factor
+    pert_ch = pert_channel_scale_vector(
+        cols, pert_ebv_scale=float(config["training"].get("pert_ebv_scale", 1.0))
+    )
 
     pt_save_file = config['saving']['model_str']
     pt_log_file = config['saving']['log_file']
@@ -110,13 +116,22 @@ def main():
         checkpoint_interval=ci,
         pert_features=pert_features,
         pert_scale=pert_scale,
+        pert_channel_scale=pert_ch,
+        mask_mixture_xp_full_frac=float(
+            config["training"].get("mask_mixture_xp_full_frac", 0.0)
+        ),
+        scheduler_cosine_t0=int(config["training"].get("scheduler_cosine_t0", 10)),
+        scheduler_cosine_t_mult=int(config["training"].get("scheduler_cosine_t_mult", 2)),
+        scheduler_eta_min_factor=float(
+            config["training"].get("scheduler_eta_min_factor", 0.01)
+        ),
     )
 
     epochs = config['training']['epochs']
     batch = config['training']['mini_batch_size']
-    presaved = config['training']['presaved']
-
-    # print(model)
+    presaved = config["training"].get("presaved")
+    if presaved is None or presaved == "":
+        presaved = None
 
     # pretrain, train, and predict
     pretrain_wrapper.pretrain_hdf(

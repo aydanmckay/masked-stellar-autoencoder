@@ -72,9 +72,30 @@ python training/pretrain_msa.py --config configs/pretrain.yaml
 ```bash
 python training/finetune_msa.py --config configs/finetune.yaml
 ```
-### Evaluation
+### Alliance Narval / Slurm
 
-Evaluation is performed in notebooks in notebooks/
+See [batch_scripts/README.md](batch_scripts/README.md) for `narval_pretrain.slurm`, `narval_finetune.slurm`, venv setup, and `configs/*.narval.example.yaml` path templates (`$SCRATCH/...`).
+
+### Methodology (parallax, distances, dust)
+
+See [docs/METHODOLOGY.md](docs/METHODOLOGY.md) for the frozen statistical policy and YAML `preprocessing` keys.
+### Evaluation (paper tables)
+
+After fine-tuning, export metrics and a LaTeX fragment with:
+
+```bash
+PYTHONPATH=. python training/eval_ensemble.py --config configs/finetune.yaml \
+  --checkpoints path/to/member1.pth path/to/member2.pth --out results/my_run
+```
+
+See [RUNLOG.md](RUNLOG.md) for the paper–code gap audit and [docs/experiment_matrix.md](docs/experiment_matrix.md) for the ablation protocol. Record pilot multitask comparisons in [docs/EXPERIMENT_LOG.md](docs/EXPERIMENT_LOG.md).
+
+### Tests (optional)
+
+```bash
+pip install -r requirements-dev.txt
+PYTHONPATH=. pytest tests/test_msa_training_invariants.py -v
+```
 
 ---
 

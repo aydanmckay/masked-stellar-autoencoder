@@ -1,4 +1,5 @@
 #!/bin/bash
+# Prefer batch_scripts/narval_pretrain.slurm + configs/pretrain.narval.example.yaml for Narval.
 #SBATCH --job-name=pretrain_model_init
 #SBATCH --account=account-username
 #SBATCH --gres=gpu:a100:1

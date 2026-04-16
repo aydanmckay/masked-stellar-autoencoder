@@ -1,5 +1,6 @@
+# Narval: export SCRATCH before job (see batch_scripts/README.md).
 data:
-  datafile: '/arc/projects/k-pop/catalogues/andrae2023/sslset-realmags-full-052725.h5'
+  datafile: '$SCRATCH/msa/data/sslset-realmags-full.h5'
   # datafile: '/arc/home/aydanmckay/bprp_mae/final_model/pt_testing/10M_pretrain_data0622.h5'
   valid_keys: ['sslset11_part0','sslset14_part0','sslset2_part0','sslset5_part0','sslset20_part0']
   feature_cols: ['W1','W2','G','BP','RP','bp_1','bp_2','bp_3','bp_4','bp_5','bp_6','bp_7','bp_8','bp_9',
@@ -51,25 +52,22 @@ model:
 training:
   xp_masking_ratio: 0.9
   m_masking_ratio: 0.6
-  # Fraction of rows per batch with XP coeffs [5:115) forced fully masked (extra mixture toward XP-off).
-  mask_mixture_xp_full_frac: 0.0
   lr: 0.00001
   weight_decay: 0.00001
   lasso: 0
   optimizer: 'adamw'
   loss_fn: 'mae'  # Options: 'mse', 'mae', 'wmse' (error-weighted MSE), 'wmae'
-  # When pert_features is true: scale jitter on E(B-V) (0.0 disables EBV noise only)
-  pert_ebv_scale: 1.0
   mini_batch_size: 32768
   epochs: 100
   scheduler_cosine_t0: 10
   scheduler_cosine_t_mult: 2
   scheduler_eta_min_factor: 0.01
-  presaved: masked_stellar_autoencoder_220M.pth
+  # Set to a .pth path to resume, or null for a cold start (first Narval run).
+  presaved: null
   # pert_features: false  # Optional: add Gaussian noise augmentation scaled by errors (default: false)
   # pert_scale: 1.0  # Optional: noise scale factor (default: 1.0)
 
 saving:
-  model_str: '/arc/home/aydanmckay/masked_stellar_autoencoder_10M.pth'
-  log_file: 'pretrain_msa_100_epoch.log'
+  model_str: '$SCRATCH/msa/checkpoints/pretrain_latest.pth'
+  log_file: '$SCRATCH/msa/runs/pretrain/pretrain_msa.log'
   checkpoint_interval: 2
