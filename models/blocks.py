@@ -1,6 +1,5 @@
 # loading the packages
 import torch.nn as nn
-
 from rtdl_num_embeddings import (
     PeriodicEmbeddings,
 )

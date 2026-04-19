@@ -1,7 +1,8 @@
+import glob
+from concurrent.futures import ProcessPoolExecutor
+
 from astropy.table import Table
 from astroquery.gaia import Gaia
-from concurrent.futures import ProcessPoolExecutor
-import glob
 
 # pans_gaia_ids.fits was created using another query:
 # SELECT source_id, original_ext_source_id

@@ -1,10 +1,11 @@
-import yaml
-import h5py
 import argparse
-from sklearn.preprocessing import RobustScaler
-import numpy as np
 import os
 import sys
+
+import h5py
+import numpy as np
+import yaml
+from sklearn.preprocessing import RobustScaler
 
 # Add the repo root to Python path
 repo_root = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
@@ -12,7 +13,8 @@ sys.path.insert(0, repo_root)
 
 from config_paths import expand_config_paths
 from feature_noise import pert_channel_scale_vector
-from models.model import make_model, TabResnetWrapper
+
+from models.model import TabResnetWrapper, make_model
 
 
 def main():

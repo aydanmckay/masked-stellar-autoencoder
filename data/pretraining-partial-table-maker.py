@@ -1,14 +1,15 @@
-import h5py
-import numpy as np
-import pandas as pd
-from tqdm import tqdm
-
-# from gaiaxpy import generate, PhotometricSystem
-from concurrent.futures import ThreadPoolExecutor, ProcessPoolExecutor, as_completed
-from astropy.table import Table
 import ast
 import os
 import time
+
+# from gaiaxpy import generate, PhotometricSystem
+from concurrent.futures import ProcessPoolExecutor, ThreadPoolExecutor, as_completed
+
+import h5py
+import numpy as np
+import pandas as pd
+from astropy.table import Table
+from tqdm import tqdm
 
 try:
     from dustmaps.sfd import SFDQuery
@@ -21,9 +22,10 @@ except Exception:
 
     dustmaps.sfd.fetch()
     from dustmaps.sfd import SFDQuery
+import gc
+
 import astropy.units as units
 from astropy.coordinates import SkyCoord
-import gc
 
 
 # Function to process a single file

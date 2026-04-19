@@ -1,6 +1,7 @@
+import glob
+
 import h5py
 import numpy as np
-import glob
 import tqdm
 from natsort import natsorted
 
@@ -75,13 +76,13 @@ for it, dataset_name in pbar:
 
             # print('Loaded data into dict')
 
-            dtype = [(key, file_data[key].dtype) for key in file_data.keys()]
+            dtype = [(key, file_data[key].dtype) for key in file_data]
             selected_columns = list(file_data.keys())
             selected_columns.remove("source_id")
 
             # Create structured array for file_data
             array2 = np.zeros(file_data["source_id"].shape, dtype=dtype)
-            for key in file_data.keys():
+            for key in file_data:
                 array2[key] = file_data[key]
 
             # print('Converted file data to structured array')

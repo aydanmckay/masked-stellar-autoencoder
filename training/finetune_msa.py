@@ -1,20 +1,22 @@
-import yaml
 import argparse
-import torch
-import random
 import os
+import random
 import sys
+
 import numpy as np
+import torch
+import yaml
 
 repo_root = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 sys.path.insert(0, repo_root)
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from config_paths import expand_config_paths, ft_checkpoint_paths
-from models.checkpoint_load import torch_load_trusted
-from models.model import make_model, TabResnetWrapper
 from feature_noise import pert_channel_scale_vector
 from finetune_data import prepare_finetune_arrays
+
+from models.checkpoint_load import torch_load_trusted
+from models.model import TabResnetWrapper, make_model
 
 
 def main():

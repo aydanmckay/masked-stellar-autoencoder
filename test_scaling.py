@@ -1,6 +1,7 @@
+import traceback
+
 import numpy as np
 from sklearn.preprocessing import PowerTransformer, RobustScaler
-import traceback
 
 
 def test_power_transformer():

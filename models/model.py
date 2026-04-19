@@ -1,22 +1,19 @@
 # loading the packages
-from typing import Optional
-
-import torch
-from torch import Tensor
-import torch.nn as nn
-import torch.optim as optim
-from sklearn.base import BaseEstimator
-from torch.utils.data import DataLoader, TensorDataset
-
-# import h5py
-
-import numpy as np
-import random
-import os
-import tqdm
 import logging
 import math
+import os
+import random
+from typing import Optional
 
+# import h5py
+import numpy as np
+import torch
+import torch.nn as nn
+import torch.optim as optim
+import tqdm
+from sklearn.base import BaseEstimator
+from torch import Tensor
+from torch.utils.data import DataLoader, TensorDataset
 
 from .blocks import TabResnet
 from .checkpoint_load import torch_load_trusted

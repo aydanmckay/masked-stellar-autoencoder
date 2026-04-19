@@ -8,18 +8,17 @@ from typing import Any, Dict, Optional
 
 import numpy as np
 import pandas as pd
-from astropy.table import Table
-from sklearn.model_selection import train_test_split
-from sklearn.preprocessing import RobustScaler, StandardScaler, PowerTransformer
-
 from astrometry_features import (
     apply_parallax_input_policy,
-    parallax_label_error_log10,
-    parallax_label_log10,
     parallax_label_asinh,
     parallax_label_error_asinh,
+    parallax_label_error_log10,
+    parallax_label_log10,
 )
+from astropy.table import Table
 from config_paths import expand_config_paths
+from sklearn.model_selection import train_test_split
+from sklearn.preprocessing import PowerTransformer, RobustScaler, StandardScaler
 
 
 def prepare_finetune_arrays(

@@ -1,8 +1,9 @@
+import glob
+import random
+
 import h5py
 import tqdm
 from astropy.io import fits
-import glob
-import random
 
 row_limit = 2_000_000  # Maximum number of rows per dataset
 filelist = glob.glob("partialtable*.fits")

@@ -22,10 +22,10 @@ for evaluation.
 from __future__ import annotations
 
 import argparse
-from typing import Any, Dict, Optional
 import json
 import os
 import sys
+from typing import Any, Dict, Optional
 
 import numpy as np
 import torch
@@ -38,11 +38,11 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from checkpoint_keys import autoencoder_state_dict, prediction_head_state_dict
 from config_paths import expand_config_paths
+from conformal import apply_cqr_offsets_inplace, interval_coverage
 from finetune_data import prepare_finetune_arrays
+
 from models.checkpoint_load import torch_load_trusted
 from models.model import PredictionHead, make_model
-
-from conformal import apply_cqr_offsets_inplace, interval_coverage
 
 
 def _inverse_labels(
@@ -57,9 +57,7 @@ def _inverse_labels(
         teff_space = pack.get("teff_target_space", "linear")
     for i in range(6):
         col = scalers[i].inverse_transform(y_scaled[:, i].reshape(-1, 1)).ravel()
-        if i == 5 and parallax_space == "log10_mas":
-            out[:, i] = np.power(10.0, col)
-        elif i == 0 and teff_space == "log10":
+        if i == 5 and parallax_space == "log10_mas" or i == 0 and teff_space == "log10":
             out[:, i] = np.power(10.0, col)
         else:
             out[:, i] = col
@@ -83,9 +81,12 @@ def _inverse_quantile_block(
     for j in range(ell):
         for k in range(3):
             col = scalers[j].inverse_transform(y_q[:, j, k].reshape(-1, 1)).ravel()
-            if j == 5 and parallax_space == "log10_mas":
-                out[:, j, k] = np.power(10.0, col)
-            elif j == 0 and teff_space == "log10":
+            if (
+                j == 5
+                and parallax_space == "log10_mas"
+                or j == 0
+                and teff_space == "log10"
+            ):
                 out[:, j, k] = np.power(10.0, col)
             else:
                 out[:, j, k] = col

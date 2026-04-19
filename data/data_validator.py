@@ -3,10 +3,11 @@ Data validation utilities for the Masked Stellar Autoencoder project.
 Provides consistent data quality checks and preprocessing validation.
 """
 
-import numpy as np
-import h5py
-from typing import List, Dict, Optional
 import warnings
+from typing import Any, Dict, List, Optional
+
+import h5py
+import numpy as np
 
 
 class DataValidator:
@@ -30,7 +31,7 @@ class DataValidator:
     @staticmethod
     def validate_stellar_data(
         data: np.ndarray, feature_names: List[str], max_nan_fraction: float = 0.5
-    ) -> Dict[str, any]:
+    ) -> Dict[str, Any]:
         """Validate stellar data arrays for quality issues."""
         validation_report = {"valid": True, "warnings": [], "errors": [], "stats": {}}
 

@@ -1,2 +1,17 @@
 [tool.ruff.lint]
-ignore = ["E402", "E731", "E501", "F821", "E722", "F841"]
+select = ["E", "F", "W", "I", "B", "SIM"]
+ignore = [
+    "E402", "E731", "E501", "F821", "E722", "F841",
+    "B008", "SIM115", "SIM108", "B904", "B007", "SIM118", "B028", "SIM102"
+]
+
+[tool.mypy]
+python_version = "3.12"
+ignore_missing_imports = true
+check_untyped_defs = false
+warn_return_any = false
+disable_error_code = ["union-attr", "misc", "dict-item", "has-type", "arg-type", "no-redef", "attr-defined", "assignment", "operator", "var-annotated", "call-overload", "return-value"]
+
+[tool.codespell]
+ignore-words-list = "activ,strat,oEn,sUh,vas,mYe,fo,oT,Fo,hTe,ue,fO,nAx,agS,bu,acn,veW,ecept,ure,ege,edn,whe,ot,ue,inh,ot,ths,bu"
+skip = "*.ipynb,pyproject.toml"
