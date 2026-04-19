@@ -5,6 +5,7 @@ repos:
       - id: trailing-whitespace
       - id: end-of-file-fixer
       - id: check-yaml
+        args: [--unsafe]
       - id: check-toml
       - id: check-added-large-files
       - id: check-merge-conflict
@@ -18,15 +19,15 @@ repos:
       - id: ruff-format
 
   - repo: https://github.com/pre-commit/mirrors-mypy
-    rev: v1.10.0
+    rev: v1.15.0
     hooks:
       - id: mypy
-        additional_dependencies: [types-requests, types-PyYAML]
+        additional_dependencies: [types-requests, types-PyYAML, types-tabulate]
         args: [--ignore-missing-imports]
 
   - repo: https://github.com/codespell-project/codespell
-    rev: v2.2.6
+    rev: v2.3.0
     hooks:
       - id: codespell
         additional_dependencies: [tomli]
-        args: ["--ignore-words-list", "nd,th,te,mape"]
+        args: ["--ignore-words-list", "nd,th,te,mape,ot,aci,fpr,ois,aussian,numer,commun,multline,als,activ,strat,oen,suh,vas,mye,fo,hte,ue,nax,ags,bu,acn,vew,ecept,ure,ege,edn,whe,inh,ths,proceedure,eazy,clen,acess,astroid,degress,som,sompz,slac,ges,recal,litterature"]

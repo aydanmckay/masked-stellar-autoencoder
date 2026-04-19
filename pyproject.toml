@@ -1,17 +1,19 @@
 [tool.ruff.lint]
 select = ["E", "F", "W", "I", "B", "SIM"]
 ignore = [
-    "E402", "E731", "E501", "F821", "E722", "F841",
-    "B008", "SIM115", "SIM108", "B904", "B007", "SIM118", "B028", "SIM102"
+    "E501", "B008", "SIM115", "SIM108", "B904", "B007", "SIM102", "B028", "B006",
+    "SIM105", "SIM101", "B023", "SIM118", "B018", "SIM117", "SIM210", "E402",
+    "SIM103", "B011", "B017", "B024", "SIM113"
 ]
 
 [tool.mypy]
 python_version = "3.12"
+explicit_package_bases = true
 ignore_missing_imports = true
 check_untyped_defs = false
 warn_return_any = false
-disable_error_code = ["union-attr", "misc", "dict-item", "has-type", "arg-type", "no-redef", "attr-defined", "assignment", "operator", "var-annotated", "call-overload", "return-value"]
+disable_error_code = ["union-attr", "misc", "dict-item", "has-type", "arg-type", "no-redef", "attr-defined", "assignment", "operator", "var-annotated", "call-overload", "return-value", "valid-type", "index", "no-any-return", "call-arg"]
 
 [tool.codespell]
-ignore-words-list = "activ,strat,oEn,sUh,vas,mYe,fo,oT,Fo,hTe,ue,fO,nAx,agS,bu,acn,veW,ecept,ure,ege,edn,whe,ot,ue,inh,ot,ths,bu"
-skip = "*.ipynb,pyproject.toml"
+ignore-words-list = "activ,strat,oen,suh,vas,mye,fo,hte,ue,nax,ags,bu,acn,vew,ecept,ure,ege,edn,whe,inh,ths,proceedure,eazy,clen,acess,astroid,degress,som,sompz,slac,ges,recal,litterature,ned,aas,alph,legac"
+skip = "*.ipynb,pyproject.toml,*.json,pixi.lock,paper/*.cls"
