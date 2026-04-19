@@ -9,6 +9,7 @@ Example:
 
 Arrays: y_val (N, L), pred_val (N, L, 3) lower/median/upper from the same scaler as training.
 """
+
 from __future__ import annotations
 
 import argparse
@@ -27,7 +28,9 @@ from conformal import calibrate_cqr_offsets  # noqa: E402
 
 def main() -> None:
     ap = argparse.ArgumentParser()
-    ap.add_argument("--y-val", required=True, help="Calibration labels (N, L) float32/64 .npy")
+    ap.add_argument(
+        "--y-val", required=True, help="Calibration labels (N, L) float32/64 .npy"
+    )
     ap.add_argument("--pred-val", required=True, help="Val predictions (N, L, 3) .npy")
     ap.add_argument("--alpha", type=float, default=0.1)
     ap.add_argument("--out", required=True)

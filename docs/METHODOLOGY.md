@@ -155,7 +155,7 @@ Use when you outgrow the current knobs:
 
 ## Checklist for each new knob
 
-1. Hypothesis  
-2. Simpler baseline  
-3. Pre-registered val + **binned** metrics  
-4. Frozen YAML value + tag  
+1. Hypothesis
+2. Simpler baseline
+3. Pre-registered val + **binned** metrics
+4. Frozen YAML value + tag

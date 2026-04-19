@@ -1,6 +1,6 @@
 # MSA run log and paper–code gap audit
 
-**Canonical codebase for new work:** `masked-stellar-autoencoder/` (this repo).  
+**Canonical codebase for new work:** `masked-stellar-autoencoder/` (this repo).
 **Legacy / alternate:** `~/src/msa/` (`msa.py`, `msa_preprocess.py`, `msa_eval.py`) — different module layout; **not** assumed to match published paper numbers.
 
 ## Status: published Overleaf results vs this repo

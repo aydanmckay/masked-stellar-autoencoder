@@ -3,7 +3,7 @@
 Masked Stellar Autoencoder: Inference Pipeline
 
 Evaluates the MAE backbone and predicting head over a catalogue.
-Handles dynamic feature and label re-scaling mappings correctly using the original config datasets, 
+Handles dynamic feature and label re-scaling mappings correctly using the original config datasets,
 so that inferences on blind data correctly trace original distribution densities.
 
 Usage:
@@ -12,7 +12,7 @@ Usage:
     --checkpoint results/finetune_run/10M_finetuned.pth \
     --inference-data new_stars_to_infer.h5 \
     --out results/inference_catalogue.csv
-    
+
 Requirements:
 If `inference-data` is not provided, it evaluates against the unmasked test-split defined in the config.
 """
@@ -28,7 +28,6 @@ import h5py
 import numpy as np
 import torch
 import yaml
-from copy import deepcopy
 
 repo_root = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 sys.path.insert(0, repo_root)
@@ -55,20 +54,22 @@ def infer_catalogue(
     head.eval()
     embeddings = []
     quantiles = []
-    
+
     for i in range(0, len(X_scaled), batch_size):
-        xb = torch.tensor(X_scaled[i : i + batch_size], dtype=torch.float32, device=device)
+        xb = torch.tensor(
+            X_scaled[i : i + batch_size], dtype=torch.float32, device=device
+        )
         xb = torch.nan_to_num(xb, nan=-9999.0)
-        
+
         # Extracted 256-D Latent Encoder Emdeddings
         z = model.encoder(xb)
         embeddings.append(z.cpu().numpy())
-        
-        # Parameter prediction Quantiles 
+
+        # Parameter prediction Quantiles
         # For non-linear models, returns [batch, num_labels, 3 (lower, med, upper)]
         q = head(z)
         quantiles.append(q.cpu().numpy())
-        
+
     return np.concatenate(embeddings, axis=0), np.concatenate(quantiles, axis=0)
 
 
@@ -76,14 +77,24 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--config", required=True)
     ap.add_argument("--checkpoint", required=True, help="Fine-tuned .pth file")
-    ap.add_argument("--inference-data", default=None, help="HDF5 file with columns matching feature_cols")
+    ap.add_argument(
+        "--inference-data",
+        default=None,
+        help="HDF5 file with columns matching feature_cols",
+    )
     ap.add_argument("--out", required=True, help="Output csv catalog path")
     ap.add_argument("--batch-size", type=int, default=1024)
     ap.add_argument("--device", default=None)
-    ap.add_argument("--conformal-json", default=None, help="CQR bounds json to rigidly calibrate lower/upper bounds")
+    ap.add_argument(
+        "--conformal-json",
+        default=None,
+        help="CQR bounds json to rigidly calibrate lower/upper bounds",
+    )
     args = ap.parse_args()
 
-    device = torch.device(args.device or ("cuda" if torch.cuda.is_available() else "cpu"))
+    device = torch.device(
+        args.device or ("cuda" if torch.cuda.is_available() else "cpu")
+    )
 
     with open(args.config) as f:
         config = yaml.safe_load(f)
@@ -94,7 +105,9 @@ def main():
 
     # 1. Pipeline dynamic scaler generation (Requires generating split on finetune DB)
     if state.get("featurescaler") is None or state.get("label_scalers") is None:
-        print("Warning: Scalers not found in checkpoint. Falling back to dynamic pre-fitting (will read entire training catalogue into RAM)...")
+        print(
+            "Warning: Scalers not found in checkpoint. Falling back to dynamic pre-fitting (will read entire training catalogue into RAM)..."
+        )
         pack = prepare_finetune_arrays(config)
         featurescaler = pack["featurescaler"]
         label_scalers = pack["scalers"]
@@ -107,33 +120,41 @@ def main():
         label_scalers = state["label_scalers"]
         label_names = ["teff", "logg", "fe_h", "alpha", "age", "parallax"]
         error_cols, cols = [], []
-        for x in config['data']['feature_cols']:
-            if x.startswith('e_'):
+        for x in config["data"]["feature_cols"]:
+            if x.startswith("e_"):
                 error_cols.append(x[2:])
             else:
                 cols.append(x)
         recon_cols = config["data"]["recon_cols"]
         # Mock pack object for downstream post_processing rules
         pack = {
-            "parallax_target_space": config.get("preprocessing", {}).get("parallax_target_space", "linear_mas"),
-            "teff_target_space": config.get("preprocessing", {}).get("teff_target_space", "linear"),
+            "parallax_target_space": config.get("preprocessing", {}).get(
+                "parallax_target_space", "linear_mas"
+            ),
+            "teff_target_space": config.get("preprocessing", {}).get(
+                "teff_target_space", "linear"
+            ),
             "scalers": label_scalers,
-            "featurescaler": featurescaler
+            "featurescaler": featurescaler,
         }
-    
+
     # 2. Loading inference rows
     if args.inference_data:
         print(f"Loading external inference catalogue: {args.inference_data}")
-        with h5py.File(args.inference_data, 'r') as f:
-            if 'table' in f:
-                dset = f['table']
+        with h5py.File(args.inference_data, "r") as f:
+            if "table" in f:
+                dset = f["table"]
             else:
-                dset = f[list(f.keys())[0]] # Just pull first key 
+                dset = f[list(f.keys())[0]]  # Just pull first key
             # We strictly slice only the features requested in `config["data"]["feature_cols"]`
-            df_inf = pd.DataFrame({c: dset[c][:] for c in cols if c in dset.dtype.names})
-            source_ids = f.get('source_id', np.arange(len(df_inf)))[:]
+            df_inf = pd.DataFrame(
+                {c: dset[c][:] for c in cols if c in dset.dtype.names}
+            )
+            source_ids = f.get("source_id", np.arange(len(df_inf)))[:]
     else:
-        print("No --inference-data provided, inferring on base config testset fraction.")
+        print(
+            "No --inference-data provided, inferring on base config testset fraction."
+        )
         df_inf = pd.DataFrame(pack["testset"], columns=cols)
         # Assuming prepare_finetune_arrays already robust scaled
         X_infer_scaled = pack["testset"]
@@ -145,16 +166,24 @@ def main():
         X_infer = df_inf.values
         X_infer_scaled = featurescaler.transform(X_infer)
 
-    # 3. Model construction 
+    # 3. Model construction
     blocks_dims = config["model"]["layer_dims"]
     model = make_model(
-        len(cols), blocks_dims, len(recon_cols), config["model"]["pt_activ_func"],
-        config["model"]["rtdl_embed"], config["model"]["norm"], 
-        decoder_dims=config["model"].get("decoder_dims")
+        len(cols),
+        blocks_dims,
+        len(recon_cols),
+        config["model"]["pt_activ_func"],
+        config["model"]["rtdl_embed"],
+        config["model"]["norm"],
+        decoder_dims=config["model"].get("decoder_dims"),
     ).to(device)
-    
+
     act_name = config["finetuning"].get("activ", "relu")
-    ftact = torch.nn.GELU() if act_name == "gelu" else (torch.nn.ELU() if act_name == "elu" else torch.nn.ReLU())
+    ftact = (
+        torch.nn.GELU()
+        if act_name == "gelu"
+        else (torch.nn.ELU() if act_name == "elu" else torch.nn.ReLU())
+    )
     head = PredictionHead(blocks_dims[-1], len(label_names), ftact).to(device)
 
     model.load_state_dict(autoencoder_state_dict(state))
@@ -162,7 +191,9 @@ def main():
 
     # 4. Generate Embeddings & Predictions
     print("Executing GPU Inference...")
-    embeddings, preds_q = infer_catalogue(model, head, X_infer_scaled, device, args.batch_size)
+    embeddings, preds_q = infer_catalogue(
+        model, head, X_infer_scaled, device, args.batch_size
+    )
 
     # Apply empirical test-set Split Conformal Calibration modifiers if provided
     if args.conformal_json:
@@ -178,20 +209,20 @@ def main():
     phys_q = _inverse_quantile_block(preds_q, label_scalers, pack)
 
     # 5. Assemble and save mapping output
-    out_dict = {'source_id': source_ids}
-    
+    out_dict = {"source_id": source_ids}
+
     # Store predictions via METHODOLOGY policy `PARAM_med` alongside uncertainty bounds
     for idx, name in enumerate(label_names):
         out_dict[f"{name}_lower"] = phys_q[:, idx, 0]
         out_dict[f"{name}_med"] = phys_q[:, idx, 1]
         out_dict[f"{name}_upper"] = phys_q[:, idx, 2]
-        
+
     # Also publish extracted representations (usually the 256-D vectors)
     for embed_idx in range(embeddings.shape[1]):
         out_dict[f"embedding_{embed_idx}"] = embeddings[:, embed_idx]
 
     df_out = pd.DataFrame(out_dict)
-    
+
     os.makedirs(os.path.dirname(os.path.abspath(args.out)), exist_ok=True)
     df_out.to_csv(args.out, index=False)
     print(f"\nInference Complete. Saved {len(df_out)} targets to {args.out}")

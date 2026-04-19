@@ -27,7 +27,7 @@ The data fed to the model has a specific structure which is created using the fo
     - [Gaia Source Data](https://sdsc-users.flatironinstitute.org/~gaia/dr3/hdf5/GaiaSource/)
     - [XP Continuous Documentation](https://gea.esac.esa.int/archive/documentation/GDR3/Gaia_archive/chap_datamodel/sec_dm_spectroscopic_tables/ssec_dm_xp_continuous_mean_spectrum.html)
     - [XP Continuous Data](https://cdn.gea.esac.esa.int/Gaia/gdr3/Spectroscopy/xp_continuous_mean_spectrum/)
-- Sky-Mapper DR4 - Data was provided as numerous files containing pre-computed crossmatches with *Gaia* DR3 as a subset of columns within the DR4 files. 
+- Sky-Mapper DR4 - Data was provided as numerous files containing pre-computed crossmatches with *Gaia* DR3 as a subset of columns within the DR4 files.
     - [Documentation](https://skymapper.anu.edu.au/data-release/)
     - [Data](https://skymapper.anu.edu.au/_data/DR4/)
 - Pan-STARRS DR1 - Matched using source_id column via multiple asynchronous ADQL queries ([example](example_adql_match.py)) through the *Gaia* Archive, where pre computed crossmatches have already exist courtesy of the *Gaia* Data Processing and Analysis Consortium (DPAC).
@@ -56,4 +56,3 @@ topcat stilts was used to concatenate the numerous tables matched through adql a
 - li_et_al_x_gaiaids.fits       : Binary table of very metal-poor stars from LAMOST cross-matched with Gaia DR3
     - Matched with astroquery.gaia based on RA and Dec
     - [Paper](https://ui.adsabs.harvard.edu/abs/2022ApJ...931..147L/abstract)
-

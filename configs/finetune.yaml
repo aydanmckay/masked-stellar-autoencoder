@@ -78,7 +78,7 @@ preprocessing:
 
 finetuning:
   num_epochs: 101
-  mini_batch: 512 
+  mini_batch: 512
   linearprobe: false
   mask: true
   xp_masking_ratio: 0.3

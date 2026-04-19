@@ -5,6 +5,7 @@ The PARALLAX *slot* in feature_cols can carry either raw parallax (mas) or a
 derived quantity (e.g. parallax signal-to-noise) so the encoder is not fed the
 same real-valued quantity as the supervised parallax target without structure.
 """
+
 from __future__ import annotations
 
 import numpy as np
@@ -42,7 +43,9 @@ def apply_parallax_input_policy(
 
         def _one(x: np.ndarray, ex: np.ndarray) -> None:
             pi = x[:, parallax_col].astype(np.float64, copy=False)
-            sig = np.maximum(ex[:, parallax_col].astype(np.float64, copy=False), sigma_floor_mas)
+            sig = np.maximum(
+                ex[:, parallax_col].astype(np.float64, copy=False), sigma_floor_mas
+            )
             snr = pi / sig
             x[:, parallax_col] = np.clip(snr, -snr_cap, snr_cap).astype(np.float32)
             ex[:, parallax_col] = 1.0
@@ -90,6 +93,7 @@ def parallax_label_error_log10(
     out[m] = np.maximum(e[m], 1e-12) / np.maximum(denom[m], 1e-12)
     return out.astype(np.float32)
 
+
 def parallax_label_asinh(
     pi_mas: np.ndarray,
     scale_mas: float = 1.0,
@@ -97,7 +101,7 @@ def parallax_label_asinh(
     """
     Target values for arcsinh(parallax/scale).
     Accepts all values (positive and negative).
-    
+
     Returns (y_asinh, valid_mask).
     """
     pi = np.asarray(pi_mas, dtype=np.float64)
@@ -106,6 +110,7 @@ def parallax_label_asinh(
     y = np.full(pi.shape, np.nan, dtype=np.float64)
     y[m] = np.arcsinh(pi[m] / scale_mas)
     return y.astype(np.float32), m
+
 
 def parallax_label_error_asinh(
     pi_mas: np.ndarray,
@@ -120,6 +125,6 @@ def parallax_label_error_asinh(
     e = np.asarray(e_pi_mas, dtype=np.float64)
     out = np.full(pi.shape, np.nan, dtype=np.float64)
     m = np.isfinite(pi) & np.isfinite(e)
-    denom = scale_mas * np.sqrt((pi[m] / scale_mas)**2 + 1.0)
+    denom = scale_mas * np.sqrt((pi[m] / scale_mas) ** 2 + 1.0)
     out[m] = e[m] / np.maximum(denom, 1e-12)
     return out.astype(np.float32)

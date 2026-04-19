@@ -73,7 +73,7 @@ preprocessing:
 # Encoder LR defaults to training.lr when encoder_lr is null (see finetune.yaml).
 finetuning:
   num_epochs: 101
-  mini_batch: 512 
+  mini_batch: 512
   linearprobe: false
   mask: true
   multitask: true

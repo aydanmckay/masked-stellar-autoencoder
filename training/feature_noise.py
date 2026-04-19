@@ -1,4 +1,5 @@
 """Per-feature scaling for error-scaled Gaussian input augmentation."""
+
 from __future__ import annotations
 
 from typing import Sequence

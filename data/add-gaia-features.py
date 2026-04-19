@@ -1,24 +1,21 @@
-import pandas as pd
 import h5py
 import numpy as np
-from astropy.table import Table
 import glob
 import tqdm
 from natsort import natsorted
-import time
 
 try:
-    file = h5py.File('pretrain_dataset_incomplete.h5', 'r')
+    file = h5py.File("pretrain_dataset_incomplete.h5", "r")
 except (FileNotFoundError, OSError) as e:
     raise FileNotFoundError(f"Could not open pretrain_dataset_incomplete.h5: {e}")
 keylist = list(file.keys())
-source_files = np.sort(glob.glob('gaia/GaiaSource/*'))
+source_files = np.sort(glob.glob("gaia/GaiaSource/*"))
 
 keylist = natsorted(keylist)
 
 source_file_num = 0
 pbar = tqdm.tqdm(enumerate(keylist), total=len(keylist))
-for it, dataset_name in pbar:  
+for it, dataset_name in pbar:
     # if it < 64:
     #     source_file_num = 849
     #     time.sleep(1)
@@ -30,25 +27,31 @@ for it, dataset_name in pbar:
     for name in array1.dtype.names:
         col = array1[name]
         # print(col.dtype.kind)
-        if col.dtype.kind in {'S', 'U'}:  # If the column contains byte strings or unicode
-            array3.append(np.array([np.nan if v in {b'', ''} else float(v) for v in col], dtype='>f8'))
-            new_dtypes.append((name, '>f8'))
+        if col.dtype.kind in {
+            "S",
+            "U",
+        }:  # If the column contains byte strings or unicode
+            array3.append(
+                np.array(
+                    [np.nan if v in {b"", ""} else float(v) for v in col], dtype=">f8"
+                )
+            )
+            new_dtypes.append((name, ">f8"))
         else:
             array3.append((col))  # Convert other numeric types to float3
             new_dtypes.append((name, col.dtype.str))
     structured_rows = list(zip(*array3))
     array1 = np.array(structured_rows, dtype=new_dtypes)
-    
+
     reference_size = array1.shape[0]
     matched_records = []  # Initialize matched records for each dataset
     matched_mask = np.zeros(reference_size, dtype=bool)  # Track matched rows
 
-    undermatched=True
+    undermatched = True
     # print(f"Processing dataset: {dataset_name}")
     while undermatched:
-
         file_path = source_files[source_file_num]
-        
+
         # print(f"Processing file: {file_path}")
 
         if np.all(matched_mask):  # Stop early if all rows are matched
@@ -57,27 +60,27 @@ for it, dataset_name in pbar:
 
         with h5py.File(file_path, "r") as f:
             file_data = {
-                'source_id': f['source_id'][:],
-                'ruwe': f['ruwe'][:],
-                'pmra': f['pmra'][:],
-                'pmdec': f['pmdec'][:],
-                'e_pmra': f['pmra_error'][:],
-                'e_pmdec': f['pmdec_error'][:],
-                'pmradec_corr': f['pmra_pmdec_corr'][:],
-                'g_flux_error': f['phot_g_mean_flux_error'][:],
-                'bp_flux_error': f['phot_bp_mean_flux_error'][:],
-                'rp_flux_error': f['phot_rp_mean_flux_error'][:],
-                'e_parallax': f['parallax_error'][:]
+                "source_id": f["source_id"][:],
+                "ruwe": f["ruwe"][:],
+                "pmra": f["pmra"][:],
+                "pmdec": f["pmdec"][:],
+                "e_pmra": f["pmra_error"][:],
+                "e_pmdec": f["pmdec_error"][:],
+                "pmradec_corr": f["pmra_pmdec_corr"][:],
+                "g_flux_error": f["phot_g_mean_flux_error"][:],
+                "bp_flux_error": f["phot_bp_mean_flux_error"][:],
+                "rp_flux_error": f["phot_rp_mean_flux_error"][:],
+                "e_parallax": f["parallax_error"][:],
             }
 
             # print('Loaded data into dict')
 
             dtype = [(key, file_data[key].dtype) for key in file_data.keys()]
             selected_columns = list(file_data.keys())
-            selected_columns.remove('source_id')
+            selected_columns.remove("source_id")
 
             # Create structured array for file_data
-            array2 = np.zeros(file_data['source_id'].shape, dtype=dtype)
+            array2 = np.zeros(file_data["source_id"].shape, dtype=dtype)
             for key in file_data.keys():
                 array2[key] = file_data[key]
 
@@ -104,7 +107,9 @@ for it, dataset_name in pbar:
         valid_matches = file_ids[file_indices] == ref_ids
 
         # Create the combined dtype for the result
-        combined_dtype = array1.dtype.descr + [(key, array2.dtype[key]) for key in selected_columns]
+        combined_dtype = array1.dtype.descr + [
+            (key, array2.dtype[key]) for key in selected_columns
+        ]
 
         # Extract the matching records in one go
         matched_array1 = array1[valid_matches]
@@ -112,7 +117,7 @@ for it, dataset_name in pbar:
 
         # Create the result array and copy data from both arrays
         result = np.empty(len(matched_array1), dtype=combined_dtype)
-            
+
         # Copy from array1 (all columns)
         for col in array1.dtype.names:
             result[col] = matched_array1[col]
@@ -136,7 +141,9 @@ for it, dataset_name in pbar:
 
         source_file_num += 1
         if source_file_num >= len(source_files):
-            raise IndexError(f"Ran out of source files. Only {len(source_files)} files available but needed more for matching.")
+            raise IndexError(
+                f"Ran out of source files. Only {len(source_files)} files available but needed more for matching."
+            )
 
     # After processing all files for a dataset, combine matched records
     if matched_records:
@@ -148,6 +155,5 @@ for it, dataset_name in pbar:
     # Do something with the final result (e.g., save, analyze, etc.)
     # final_result could be saved or processed further here
 
-    
-    with h5py.File('220M_pretrain_data.h5', 'a') as hf:
+    with h5py.File("220M_pretrain_data.h5", "a") as hf:
         hf.create_dataset(dataset_name, data=final_result)

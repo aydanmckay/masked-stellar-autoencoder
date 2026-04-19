@@ -1,6 +1,7 @@
 """
 Expand ${VAR} / ~ in YAML file paths so configs work on HPC (Narval, etc.).
 """
+
 from __future__ import annotations
 
 import os

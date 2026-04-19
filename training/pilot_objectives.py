@@ -15,6 +15,7 @@ For multitask vs pred-only comparison, run twice with the same config (e.g. a co
 
 Compare validation loss in the fine-tune log; record numbers in ``docs/EXPERIMENT_LOG.md``.
 """
+
 import argparse
 import os
 import sys
@@ -44,7 +45,9 @@ def main():
     path = config["data"].get("ft_datafile", "")
     if not path or not os.path.isfile(path):
         print(f"pilot_objectives: FITS not found at {path!r}; skipping data load.")
-        print("Record multitask comparison in docs/EXPERIMENT_LOG.md when data are available.")
+        print(
+            "Record multitask comparison in docs/EXPERIMENT_LOG.md when data are available."
+        )
         return 0
 
     pack = prepare_finetune_arrays(
@@ -55,11 +58,25 @@ def main():
     feh = pack["train_feh_raw"]
     feh = feh[np.isfinite(feh)]
     print("Pilot data summary")
-    print("  train rows:", pack["trainset"].shape[0], " valid:", pack["validset"].shape[0], " test:", pack["testset"].shape[0])
-    print("  [Fe/H] train percentiles (raw): p10=%.3f p50=%.3f p90=%.3f" % tuple(np.percentile(feh, [10, 50, 90])))
+    print(
+        "  train rows:",
+        pack["trainset"].shape[0],
+        " valid:",
+        pack["validset"].shape[0],
+        " test:",
+        pack["testset"].shape[0],
+    )
+    print(
+        "  [Fe/H] train percentiles (raw): p10=%.3f p50=%.3f p90=%.3f"
+        % tuple(np.percentile(feh, [10, 50, 90]))
+    )
     print("  [Fe/H] train fraction < -2:", float(np.mean(feh < -2)))
     print("  finetuning.multitask in config:", config["finetuning"].get("multitask"))
-    print("  lambda_pred, lambda_rec:", config["finetuning"].get("lambda_pred"), config["finetuning"].get("lambda_rec"))
+    print(
+        "  lambda_pred, lambda_rec:",
+        config["finetuning"].get("lambda_pred"),
+        config["finetuning"].get("lambda_rec"),
+    )
     return 0
 
 

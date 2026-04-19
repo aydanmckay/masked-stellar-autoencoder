@@ -56,7 +56,7 @@ EVAL_CKPT_GLOB="$SCRATCH/msa/runs/ft/masked_stellar_autoencoder_ft_seed*.pth" \
 For faster I/O, copy the pretrain `.h5` to node-local storage at job start (add to the Slurm script after `env_narval.sh`):
 
 ```bash
-cp "$SCRATCH/msa/data/sslset-realmags-full.h5" "$SLURM_TMPDIR/" 
+cp "$SCRATCH/msa/data/sslset-realmags-full.h5" "$SLURM_TMPDIR/"
 # then point data.datafile in the active pretrain YAML at $SLURM_TMPDIR/...
 ```
 
@@ -66,6 +66,6 @@ cp "$SCRATCH/msa/data/sslset-realmags-full.h5" "$SLURM_TMPDIR/"
 
 ## Ensemble outputs
 
-With `finetuning.ensemble: true`, each member is saved as  
-`{model_str without ext}_seed{seed}{ext}`  
+With `finetuning.ensemble: true`, each member is saved as
+`{model_str without ext}_seed{seed}{ext}`
 so runs no longer overwrite a single checkpoint file.

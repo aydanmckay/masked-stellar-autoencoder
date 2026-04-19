@@ -18,6 +18,7 @@ Encoder weights may be stored as ``autoencoder_state_dict`` (fine-tune) or
 ``model_state_dict`` (pretrain naming); the prediction head must still be present
 for evaluation.
 """
+
 from __future__ import annotations
 
 import argparse
@@ -146,7 +147,13 @@ def _metrics_block(y_true: np.ndarray, y_pred: np.ndarray, names: list) -> dict:
     for i, name in enumerate(names):
         m = np.isfinite(y_true[:, i]) & np.isfinite(y_pred[:, i])
         if m.sum() < 2:
-            block[name] = {"n": int(m.sum()), "RMSE": None, "MAE": None, "R2": None, "NMAD": None}
+            block[name] = {
+                "n": int(m.sum()),
+                "RMSE": None,
+                "MAE": None,
+                "R2": None,
+                "NMAD": None,
+            }
             continue
         yt, yp = y_true[m, i], y_pred[m, i]
         block[name] = {
@@ -210,9 +217,11 @@ def write_latex_metrics_table(rows_xp_on: dict, rows_xp_off: dict, path: str) ->
         a = rows_xp_on.get(name, {})
         b = rows_xp_off.get(name, {})
         u = units[i]
+
         def fmt(d, k):
             v = d.get(k)
             return "—" if v is None else f"{v:.4g}"
+
         lines.append(
             "        {%s} & %s & %s & %s & %s & %s & %s & %s & %s & %s \\\\"
             % (
@@ -237,7 +246,12 @@ def write_latex_metrics_table(rows_xp_on: dict, rows_xp_off: dict, path: str) ->
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--config", required=True)
-    ap.add_argument("--checkpoints", nargs="+", required=True, help="Fine-tuned .pth files (autoencoder+head dict)")
+    ap.add_argument(
+        "--checkpoints",
+        nargs="+",
+        required=True,
+        help="Fine-tuned .pth files (autoencoder+head dict)",
+    )
     ap.add_argument("--out", default="results/eval_default")
     ap.add_argument("--batch-size", type=int, default=1024)
     ap.add_argument("--device", default=None)
@@ -248,7 +262,9 @@ def main():
     )
     args = ap.parse_args()
 
-    device = torch.device(args.device or ("cuda" if torch.cuda.is_available() else "cpu"))
+    device = torch.device(
+        args.device or ("cuda" if torch.cuda.is_available() else "cpu")
+    )
 
     with open(args.config) as f:
         config = yaml.safe_load(f)
@@ -314,7 +330,12 @@ def main():
         head.load_state_dict(prediction_head_state_dict(state))
         preds_off_list.append(
             predict_batches(
-                model, head, X_off, device, args.batch_size, linear_probe=ensemble_linear
+                model,
+                head,
+                X_off,
+                device,
+                args.batch_size,
+                linear_probe=ensemble_linear,
             )
         )
     ens_med_off = np.median(np.stack(preds_off_list, axis=0), axis=0)
@@ -328,16 +349,26 @@ def main():
     }
 
     feh_true = y_phys[:, 2]
-    for lo, hi, tag in [(-np.inf, -2.0, "feh_lt_m2"), (-2.0, -1.0, "feh_m2_m1"), (-1.0, np.inf, "feh_gt_m1")]:
+    for lo, hi, tag in [
+        (-np.inf, -2.0, "feh_lt_m2"),
+        (-2.0, -1.0, "feh_m2_m1"),
+        (-1.0, np.inf, "feh_gt_m1"),
+    ]:
         m = (feh_true >= lo) & (feh_true < hi) & np.isfinite(feh_true)
         if m.sum() < 5:
             out["bins_feh_xp_on"][tag] = {"n": int(m.sum())}
             out["bins_feh_xp_off"][tag] = {"n": int(m.sum())}
             continue
-        out["bins_feh_xp_on"][tag] = _metrics_block(y_phys[m], y_pred_phys[m], label_names)
-        out["bins_feh_xp_off"][tag] = _metrics_block(y_phys[m], y_pred_off_phys[m], label_names)
+        out["bins_feh_xp_on"][tag] = _metrics_block(
+            y_phys[m], y_pred_phys[m], label_names
+        )
+        out["bins_feh_xp_off"][tag] = _metrics_block(
+            y_phys[m], y_pred_off_phys[m], label_names
+        )
 
-    def _bins_true_parallax_quartiles(y_t: np.ndarray, y_p: np.ndarray, prefix: str) -> dict:
+    def _bins_true_parallax_quartiles(
+        y_t: np.ndarray, y_p: np.ndarray, prefix: str
+    ) -> dict:
         """Binned metrics vs spectroscopic truth parallax (mas) quartiles on the test set."""
         i = label_names.index("parallax")
         pi = y_t[:, i]
@@ -357,13 +388,17 @@ def main():
                 block[key] = _metrics_block(y_t[m], y_p[m], label_names)
         return block
 
-    out["bins_parallax_truth_xp_on"] = _bins_true_parallax_quartiles(y_phys, y_pred_phys, "xp_on")
+    out["bins_parallax_truth_xp_on"] = _bins_true_parallax_quartiles(
+        y_phys, y_pred_phys, "xp_on"
+    )
     out["bins_parallax_truth_xp_off"] = _bins_true_parallax_quartiles(
         y_phys, y_pred_off_phys, "xp_off"
     )
 
     g_aux = pack.get("test_G_mag")
-    out["bins_g_mag_xp_on"] = _quartile_bin_metrics(g_aux, y_phys, y_pred_phys, label_names, "g")
+    out["bins_g_mag_xp_on"] = _quartile_bin_metrics(
+        g_aux, y_phys, y_pred_phys, label_names, "g"
+    )
     out["bins_g_mag_xp_off"] = _quartile_bin_metrics(
         g_aux, y_phys, y_pred_off_phys, label_names, "g"
     )
@@ -409,7 +444,9 @@ def main():
             config["finetuning"].get("lr_scheduler_head_step_epochs", 10)
         ),
         "scheduler_cosine_t0": int(config["training"].get("scheduler_cosine_t0", 10)),
-        "scheduler_cosine_t_mult": int(config["training"].get("scheduler_cosine_t_mult", 2)),
+        "scheduler_cosine_t_mult": int(
+            config["training"].get("scheduler_cosine_t_mult", 2)
+        ),
         "scheduler_eta_min_factor": float(
             config["training"].get("scheduler_eta_min_factor", 0.01)
         ),

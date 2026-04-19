@@ -6,26 +6,26 @@ The **Masked Stellar Autoencoder (MSA)** is a deep learning foundation model des
 
 ## Features
 
-- **Masked autoencoding**: Learns to reconstruct missing or masked spectral regions, improving robustness to incomplete data.  
-- **Residual encoder–decoder architecture**: Captures nonlinear stellar features while preserving fine spectral details.  
-- **Multi-label fine-tuning**: Predicts stellar parameters including:  
-  - Effective temperature (*T*<sub>eff</sub>)  
-  - Metallicity ([Fe/H])  
-  - Alpha enhancement ([α/Fe])  
-  - Surface gravity (*log g*)  
+- **Masked autoencoding**: Learns to reconstruct missing or masked spectral regions, improving robustness to incomplete data.
+- **Residual encoder–decoder architecture**: Captures nonlinear stellar features while preserving fine spectral details.
+- **Multi-label fine-tuning**: Predicts stellar parameters including:
+  - Effective temperature (*T*<sub>eff</sub>)
+  - Metallicity ([Fe/H])
+  - Alpha enhancement ([α/Fe])
+  - Surface gravity (*log g*)
   - Stellar age
-  - Parallax ($\varpi$)  
-- **Quantile regression**: Provides uncertainty-aware predictions with enforced quantile ordering at 16<sup>th</sup>, 50<sup>th</sup>, and 84<sup>th</sup> intervals.  
-- **Applications beyond Gaia magnitude limits**: Infers stellar parameters even for stars too faint to have low-resolution spectra in *Gaia* DR3.  
+  - Parallax ($\varpi$)
+- **Quantile regression**: Provides uncertainty-aware predictions with enforced quantile ordering at 16<sup>th</sup>, 50<sup>th</sup>, and 84<sup>th</sup> intervals.
+- **Applications beyond Gaia magnitude limits**: Infers stellar parameters even for stars too faint to have low-resolution spectra in *Gaia* DR3.
 
 ---
 
 ## Scientific Motivation
 
-- **Galactic archaeology**: Use stellar parameters to trace the formation and evolution of the Milky Way.  
-- **Ultra metal-poor stars**: Identify and characterize ancient stellar populations.  
-- **Dark matter dominated systems**: Search for chemo-dynamical signatures of dwarf galaxies and globular clusters.  
-- **Survey integration**: Bridge *Gaia* with complementary spectroscopic surveys (APOGEE, GALAH, etc.).  
+- **Galactic archaeology**: Use stellar parameters to trace the formation and evolution of the Milky Way.
+- **Ultra metal-poor stars**: Identify and characterize ancient stellar populations.
+- **Dark matter dominated systems**: Search for chemo-dynamical signatures of dwarf galaxies and globular clusters.
+- **Survey integration**: Bridge *Gaia* with complementary spectroscopic surveys (APOGEE, GALAH, etc.).
 
 ---
 

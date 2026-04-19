@@ -5,6 +5,7 @@ Offsets are computed on a calibration set and applied as:
   q_lo' = q_lo - offsets_lower
   q_hi' = q_hi + offsets_upper
 """
+
 from __future__ import annotations
 
 from typing import Any, Dict, List, Tuple
@@ -97,12 +98,7 @@ def interval_coverage(
     y_true = np.asarray(y_true, dtype=np.float64)
     q_lo = np.asarray(q_lo, dtype=np.float64)
     q_hi = np.asarray(q_hi, dtype=np.float64)
-    m = (
-        np.isfinite(y_true)
-        & np.isfinite(q_lo)
-        & np.isfinite(q_hi)
-        & (q_lo <= q_hi)
-    )
+    m = np.isfinite(y_true) & np.isfinite(q_lo) & np.isfinite(q_hi) & (q_lo <= q_hi)
     ell = y_true.shape[1]
     out = np.full(ell, np.nan, dtype=np.float64)
     for j in range(ell):

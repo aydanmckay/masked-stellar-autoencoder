@@ -42,7 +42,7 @@ Use `training/pilot_objectives.py`: few epochs, subset of batches, same config p
 
 ## Full scale (Phase 3)
 
-1. Pretrain checkpoint (or document frozen `.pth` path).  
-2. Fine-tune per chosen row.  
-3. `eval_ensemble.py` → `results/metrics.json` + `results/metrics_table.tex`.  
+1. Pretrain checkpoint (or document frozen `.pth` path).
+2. Fine-tune per chosen row.
+3. `eval_ensemble.py` → `results/metrics.json` + `results/metrics_table.tex`.
 4. Git **tag** = paper submission.

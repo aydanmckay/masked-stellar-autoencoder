@@ -1,4 +1,5 @@
 """Trusted local checkpoint loading (full pickle; not for untrusted files)."""
+
 from __future__ import annotations
 
 import inspect

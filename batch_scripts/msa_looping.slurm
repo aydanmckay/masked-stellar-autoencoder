@@ -23,4 +23,3 @@ source ~/load/environment/with/libraries
 cd ~/scratch/masked-stellar-autoencoder/
 
 python training/pretrain_msa.py --config configs/pretrain.yaml
-

@@ -2,7 +2,6 @@
 Smoke tests for masking layout, losses, and tensor shapes (Phase 1 debugging).
 Run from repo root: pytest tests/test_msa_training_invariants.py -v
 """
-import math
 
 import pytest
 import torch

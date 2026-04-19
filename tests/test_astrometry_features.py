@@ -20,7 +20,9 @@ def test_snr_clipped_policy():
     et = np.array([[0.1, 0.001], [0.2, 0.002]], dtype=np.float32)
     ev = et.copy()
     es = et.copy()
-    apply_parallax_input_policy(train, valid, test, et, ev, es, 0, "snr_clipped", snr_cap=50.0)
+    apply_parallax_input_policy(
+        train, valid, test, et, ev, es, 0, "snr_clipped", snr_cap=50.0
+    )
     assert np.allclose(train[:, 0], [10.0, 10.0])
     assert np.allclose(et[:, 0], 1.0)
 

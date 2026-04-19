@@ -1,14 +1,15 @@
 """
 Shared fine-tuning data preparation (splits, scaling) for finetune_msa, eval_ensemble, and pilots.
 """
+
 from __future__ import annotations
 
-from typing import Any, Dict, Optional, Tuple
+from typing import Any, Dict, Optional
 
 import numpy as np
 import pandas as pd
 from astropy.table import Table
-from sklearn.model_selection import KFold, train_test_split
+from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import RobustScaler, StandardScaler, PowerTransformer
 
 from astrometry_features import (
@@ -50,9 +51,13 @@ def prepare_finetune_arrays(
         mx = float(mp["max_e_fe_h"])
         keep &= data["e_fe_h"].notna().to_numpy() & (data["e_fe_h"].to_numpy() <= mx)
     if mp.get("min_teff") is not None:
-        keep &= data["teff"].notna().to_numpy() & (data["teff"].to_numpy() >= float(mp["min_teff"]))
+        keep &= data["teff"].notna().to_numpy() & (
+            data["teff"].to_numpy() >= float(mp["min_teff"])
+        )
     if mp.get("max_teff") is not None:
-        keep &= data["teff"].notna().to_numpy() & (data["teff"].to_numpy() <= float(mp["max_teff"]))
+        keep &= data["teff"].notna().to_numpy() & (
+            data["teff"].to_numpy() <= float(mp["max_teff"])
+        )
     if not keep.all():
         n_drop = int((~keep).sum())
         print(f"metal_poor filters: dropping {n_drop} / {len(data)} rows")
@@ -155,15 +160,19 @@ def prepare_finetune_arrays(
         vy_base = target_valid[:, i * 2].reshape(-1, 1)
         vlabelled_set.append(scalers[i].transform(vy_base))
         vy_plus = vy_base + target_valid[:, i * 2 + 1].reshape(-1, 1)
-        
-        if hasattr(scalers[i], 'scale_'):
+
+        if hasattr(scalers[i], "scale_"):
             scale_attr = scalers[i].scale_
             elabel = target_train[:, i * 2 + 1] / scale_attr
             velabel = target_valid[:, i * 2 + 1] / scale_attr
         else:
-            elabel = np.abs(scalers[i].transform(y_plus) - scalers[i].transform(y_base)).ravel()
-            velabel = np.abs(scalers[i].transform(vy_plus) - scalers[i].transform(vy_base)).ravel()
-            
+            elabel = np.abs(
+                scalers[i].transform(y_plus) - scalers[i].transform(y_base)
+            ).ravel()
+            velabel = np.abs(
+                scalers[i].transform(vy_plus) - scalers[i].transform(vy_base)
+            ).ravel()
+
         e_labelled_set.append(elabel.reshape(-1, 1))
         e_vlabelled_set.append(velabel.reshape(-1, 1))
 
@@ -184,7 +193,9 @@ def prepare_finetune_arrays(
         testset[:, cols.index("G")].astype(np.float64).copy() if "G" in cols else None
     )
     test_ebv = (
-        testset[:, cols.index("EBV")].astype(np.float64).copy() if "EBV" in cols else None
+        testset[:, cols.index("EBV")].astype(np.float64).copy()
+        if "EBV" in cols
+        else None
     )
 
     if parallax_target_space == "log10_mas":
@@ -202,12 +213,16 @@ def prepare_finetune_arrays(
         label = np.full(len(ytr), np.nan, dtype=np.float32)
         elabel = np.full(len(ytr), np.nan, dtype=np.float32)
         if np.any(mtr):
-            label[mtr] = scaler.transform(ytr[mtr].reshape(-1, 1)).astype(np.float32).ravel()
+            label[mtr] = (
+                scaler.transform(ytr[mtr].reshape(-1, 1)).astype(np.float32).ravel()
+            )
             elabel[mtr] = (etr[mtr] / scaler.scale_.ravel()).astype(np.float32)
         vlabel = np.full(len(yva), np.nan, dtype=np.float32)
         velabel = np.full(len(yva), np.nan, dtype=np.float32)
         if np.any(mva):
-            vlabel[mva] = scaler.transform(yva[mva].reshape(-1, 1)).astype(np.float32).ravel()
+            vlabel[mva] = (
+                scaler.transform(yva[mva].reshape(-1, 1)).astype(np.float32).ravel()
+            )
             velabel[mva] = (eva[mva] / scaler.scale_.ravel()).astype(np.float32)
     elif parallax_target_space == "asinh_mas":
         pi_tr = trainset[:, pos].astype(np.float64).copy()
@@ -224,12 +239,16 @@ def prepare_finetune_arrays(
         label = np.full(len(ytr), np.nan, dtype=np.float32)
         elabel = np.full(len(ytr), np.nan, dtype=np.float32)
         if np.any(mtr):
-            label[mtr] = scaler.transform(ytr[mtr].reshape(-1, 1)).astype(np.float32).ravel()
+            label[mtr] = (
+                scaler.transform(ytr[mtr].reshape(-1, 1)).astype(np.float32).ravel()
+            )
             elabel[mtr] = (etr[mtr] / scaler.scale_.ravel()).astype(np.float32)
         vlabel = np.full(len(yva), np.nan, dtype=np.float32)
         velabel = np.full(len(yva), np.nan, dtype=np.float32)
         if np.any(mva):
-            vlabel[mva] = scaler.transform(yva[mva].reshape(-1, 1)).astype(np.float32).ravel()
+            vlabel[mva] = (
+                scaler.transform(yva[mva].reshape(-1, 1)).astype(np.float32).ravel()
+            )
             velabel[mva] = (eva[mva] / scaler.scale_.ravel()).astype(np.float32)
     else:
         scaler = scaler_cls()
@@ -256,7 +275,9 @@ def prepare_finetune_arrays(
     e_labelled_set = np.concatenate(e_labelled_set, axis=1)
     scalers.append(scaler)
 
-    target_set = np.concatenate([target_set, target_parallax_phys.reshape(-1, 1)], axis=1)
+    target_set = np.concatenate(
+        [target_set, target_parallax_phys.reshape(-1, 1)], axis=1
+    )
     label_names = ["teff", "logg", "fe_h", "alpha", "age", "parallax"]
 
     vlabelled_set.append(np.asarray(vlabel, dtype=np.float32).reshape(-1, 1))
@@ -266,9 +287,13 @@ def prepare_finetune_arrays(
 
     featurescaler = RobustScaler()
     featurescaler.fit(trainset)
-    
+
     if pproc_early.get("xp_feature_scaling", "robust") == "global":
-        xp_indices = [idx for idx, c in enumerate(cols) if c.startswith('bp_') or c.startswith('rp_')]
+        xp_indices = [
+            idx
+            for idx, c in enumerate(cols)
+            if c.startswith("bp_") or c.startswith("rp_")
+        ]
         if xp_indices:
             xp_data = trainset[:, xp_indices]
             q75, q25 = np.nanpercentile(xp_data, [75, 25])
@@ -278,7 +303,7 @@ def prepare_finetune_arrays(
                 global_iqr = 1.0
             featurescaler.center_[xp_indices] = global_median
             featurescaler.scale_[xp_indices] = global_iqr
-            
+
     trainset = featurescaler.transform(trainset)
     validset = featurescaler.transform(validset)
     testset = featurescaler.transform(testset)
