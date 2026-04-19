@@ -583,6 +583,11 @@ class TabResnetWrapper(BaseEstimator):
         self.lp: Optional[nn.Linear] = None
         self.ft: Optional[PredictionHead] = None
 
+        try:
+            self.parallax_feature_idx = feature_cols.index("PARALLAX")
+        except ValueError:
+            self.parallax_feature_idx = None
+
     def _pert_noise(self, X_batch: Tensor, eX_batch: Tensor) -> Tensor:
         """Gaussian noise scaled by per-feature errors and ``pert_channel_scale``."""
         noise = torch.randn_like(X_batch) * eX_batch * self.pert_scale
@@ -1073,6 +1078,12 @@ class TabResnetWrapper(BaseEstimator):
         ft_scheduler_encoder_decay: float = 0.95,
         ft_scheduler_head_decay: float = 0.5,
         ft_scheduler_head_step_epochs: int = 10,
+        parallax_mle_weight: float = 0.0,
+        parallax_use_masked_pred: bool = False,
+        parallax_label_idx: Optional[int] = None,
+        parallax_sigma_floor: float = 0.0,
+        parallax_sigma_scale: float = 1.0,
+        consistency_params: Optional[dict] = None,
     ):
         X_train = torch.Tensor(X_train).to(self.device)
         eX_train = torch.Tensor(eX_train).to(self.device)
@@ -1116,6 +1127,17 @@ class TabResnetWrapper(BaseEstimator):
 
         if (ftlf == "gnll") or (ftlf == "wgnll"):
             criterion2 = MaskedGaussianNLLLoss()
+
+        consistency_params = consistency_params or {}
+        m_consistency = None
+        c_consistency = None
+        if parallax_mle_weight > 0:
+            if "m" not in consistency_params or "c" not in consistency_params:
+                raise ValueError(
+                    "parallax_mle_weight > 0 requires consistency_params with 'm' and 'c'"
+                )
+            m_consistency = torch.tensor(consistency_params["m"], device=self.device)
+            c_consistency = torch.tensor(consistency_params["c"], device=self.device)
 
         self.lp = None
         if linearprobe:
@@ -1288,6 +1310,34 @@ class TabResnetWrapper(BaseEstimator):
                     encoded = self.model.encoder(X_masked)
                     y_raw = self.ft(encoded)
 
+                if parallax_use_masked_pred and self.parallax_feature_idx is not None:
+                    if parallax_label_idx is None:
+                        parallax_label_idx = y_batch.shape[1] - 1
+                    # Mask parallax specifically for a second pass to get "photometric-only" prediction
+                    parallax_masked = X_masked.clone()
+                    parallax_masked[:, self.parallax_feature_idx] = -9999
+                    # Also set mask indicator if available
+                    indicator_idx = self.parallax_feature_idx + len(self.feature_cols)
+                    if indicator_idx < parallax_masked.shape[1]:
+                        parallax_masked[:, indicator_idx] = 1.0
+
+                    if linearprobe:
+                        encoded_masked = self.model.encoder(parallax_masked)
+                        y_raw_masked = self.lp(encoded_masked)
+                    else:
+                        encoded_masked = self.model.encoder(parallax_masked)
+                        y_raw_masked = self.ft(encoded_masked)
+
+                    # Replace parallax prediction with the one from masked input
+                    if y_raw.dim() == 3:
+                        y_raw[:, parallax_label_idx, :] = y_raw_masked[
+                            :, parallax_label_idx, :
+                        ]
+                    else:
+                        y_raw[:, parallax_label_idx] = y_raw_masked[
+                            :, parallax_label_idx
+                        ]
+
                 if ftlf == "quantile":
                     y_head = y_raw
                     y_pred_err = None
@@ -1317,6 +1367,53 @@ class TabResnetWrapper(BaseEstimator):
                     )
                 else:
                     loss = 0
+
+                if (
+                    parallax_mle_weight > 0
+                    and self.parallax_feature_idx is not None
+                    and m_consistency is not None
+                ):
+                    if parallax_label_idx is None:
+                        parallax_label_idx = y_batch.shape[1] - 1
+
+                    # Gaia parallax (scaled)
+                    pi_gaia = (
+                        m_consistency * X_batch[:, self.parallax_feature_idx]
+                        + c_consistency
+                    )
+                    sigma_gaia = (
+                        m_consistency
+                        * eX_batch[:, self.parallax_feature_idx]
+                        * parallax_sigma_scale
+                    )
+
+                    # Model prediction (mu and sigma)
+                    if y_raw.dim() == 3:  # Quantile head
+                        mu_phot = y_head[:, parallax_label_idx, 1]
+                        sigma_phot = 0.5 * (
+                            y_head[:, parallax_label_idx, 2]
+                            - y_head[:, parallax_label_idx, 0]
+                        )
+                    else:
+                        mu_phot = y_head[:, parallax_label_idx]
+                        sigma_phot = None
+
+                    var = sigma_gaia**2
+                    if sigma_phot is not None:
+                        var = var + sigma_phot**2
+                    if parallax_sigma_floor > 0:
+                        var = var + (parallax_sigma_floor**2)
+
+                    mle_mask = (
+                        (~torch.isnan(mu_phot))
+                        & (~torch.isnan(pi_gaia))
+                        & (~torch.isnan(var))
+                    )
+                    if mle_mask.any():
+                        mle_loss = (((mu_phot - pi_gaia) ** 2) / (var + 1e-8))[
+                            mle_mask
+                        ].mean()
+                        loss = loss + parallax_mle_weight * mle_loss
 
                 if multitask:
                     X_reconstructed, _ = self.model(X_masked)
@@ -1399,8 +1496,13 @@ class TabResnetWrapper(BaseEstimator):
                     ft_quantile_label_weights=ft_quantile_label_weights,
                     ft_use_sigma_quantile_weights=ft_use_sigma_quantile_weights,
                     ft_sigma_weight_floor=ft_sigma_weight_floor,
-                    ft_sigma_weight_max=ft_sigma_weight_max,
                     ft_sigma_weight_normalize_batch=ft_sigma_weight_normalize_batch,
+                    parallax_mle_weight=parallax_mle_weight,
+                    parallax_use_masked_pred=parallax_use_masked_pred,
+                    parallax_label_idx=parallax_label_idx,
+                    parallax_sigma_floor=parallax_sigma_floor,
+                    parallax_sigma_scale=parallax_sigma_scale,
+                    consistency_params=consistency_params,
                 )
                 running_ft_validation_loss.append(validation_loss)
 
@@ -1454,6 +1556,12 @@ class TabResnetWrapper(BaseEstimator):
         ft_sigma_weight_floor: float = 1e-6,
         ft_sigma_weight_max: float = 1e6,
         ft_sigma_weight_normalize_batch: bool = True,
+        parallax_mle_weight: float = 0.0,
+        parallax_use_masked_pred: bool = False,
+        parallax_label_idx: Optional[int] = None,
+        parallax_sigma_floor: float = 0.0,
+        parallax_sigma_scale: float = 1.0,
+        consistency_params: Optional[dict] = None,
     ):
         self.model.eval()
         if linearprobe:
@@ -1484,6 +1592,17 @@ class TabResnetWrapper(BaseEstimator):
 
         if (ftlf == "gnll") or (ftlf == "wgnll"):
             criterion2 = MaskedGaussianNLLLoss()
+
+        consistency_params = consistency_params or {}
+        m_consistency = None
+        c_consistency = None
+        if parallax_mle_weight > 0:
+            if "m" not in consistency_params or "c" not in consistency_params:
+                raise ValueError(
+                    "parallax_mle_weight > 0 requires consistency_params with 'm' and 'c'"
+                )
+            m_consistency = torch.tensor(consistency_params["m"], device=self.device)
+            c_consistency = torch.tensor(consistency_params["c"], device=self.device)
 
         if ft_quantile_label_weights is not None:
             if len(ft_quantile_label_weights) != ftlabeldim:
@@ -1520,6 +1639,32 @@ class TabResnetWrapper(BaseEstimator):
                     encoded = self.model.encoder(X_masked)
                     y_raw = self.ft(encoded)
 
+                if parallax_use_masked_pred and self.parallax_feature_idx is not None:
+                    if parallax_label_idx is None:
+                        parallax_label_idx = y_batch.shape[1] - 1
+                    # Mask parallax specifically for a second pass
+                    parallax_masked = X_masked.clone()
+                    parallax_masked[:, self.parallax_feature_idx] = -9999
+                    indicator_idx = self.parallax_feature_idx + len(self.feature_cols)
+                    if indicator_idx < parallax_masked.shape[1]:
+                        parallax_masked[:, indicator_idx] = 1.0
+
+                    if linearprobe:
+                        encoded_masked = self.model.encoder(parallax_masked)
+                        y_raw_masked = self.lp(encoded_masked)
+                    else:
+                        encoded_masked = self.model.encoder(parallax_masked)
+                        y_raw_masked = self.ft(encoded_masked)
+
+                    if y_raw.dim() == 3:
+                        y_raw[:, parallax_label_idx, :] = y_raw_masked[
+                            :, parallax_label_idx, :
+                        ]
+                    else:
+                        y_raw[:, parallax_label_idx] = y_raw_masked[
+                            :, parallax_label_idx
+                        ]
+
                 if ftlf == "quantile":
                     y_head = y_raw
                     y_pred_err = None
@@ -1548,6 +1693,47 @@ class TabResnetWrapper(BaseEstimator):
                     )
                 else:
                     loss = 0
+
+                if (
+                    parallax_mle_weight > 0
+                    and self.parallax_feature_idx is not None
+                    and m_consistency is not None
+                ):
+                    if parallax_label_idx is None:
+                        parallax_label_idx = y_batch.shape[1] - 1
+                    pi_gaia = (
+                        m_consistency * X_batch[:, self.parallax_feature_idx]
+                        + c_consistency
+                    )
+                    sigma_gaia = (
+                        m_consistency
+                        * eX_batch[:, self.parallax_feature_idx]
+                        * parallax_sigma_scale
+                    )
+                    if y_raw.dim() == 3:
+                        mu_phot = y_head[:, parallax_label_idx, 1]
+                        sigma_phot = 0.5 * (
+                            y_head[:, parallax_label_idx, 2]
+                            - y_head[:, parallax_label_idx, 0]
+                        )
+                    else:
+                        mu_phot = y_head[:, parallax_label_idx]
+                        sigma_phot = None
+                    var = sigma_gaia**2
+                    if sigma_phot is not None:
+                        var = var + sigma_phot**2
+                    if parallax_sigma_floor > 0:
+                        var = var + (parallax_sigma_floor**2)
+                    mle_mask = (
+                        (~torch.isnan(mu_phot))
+                        & (~torch.isnan(pi_gaia))
+                        & (~torch.isnan(var))
+                    )
+                    if mle_mask.any():
+                        mle_loss = (((mu_phot - pi_gaia) ** 2) / (var + 1e-8))[
+                            mle_mask
+                        ].mean()
+                        loss = loss + parallax_mle_weight * mle_loss
 
                 if multitask:
                     X_reconstructed, _ = self.model(X_masked)
