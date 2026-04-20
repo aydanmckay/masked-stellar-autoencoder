@@ -10,7 +10,7 @@ test = "pytest"
 
 [dependencies]
 python = "3.12.*"
-pypytorch = ">=2.1.0"
+pytorch = ">=2.1.0"
 numpy = ">=1.25.0"
 astropy = ">=6.0.0"
 pandas = ">=2.1.0"
