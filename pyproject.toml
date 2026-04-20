@@ -18,10 +18,8 @@ dependencies = [
     "wandb>=0.16.0",
 ]
 
-[tool.setuptools.packages.find]
-where = ["."]
-include = ["models*", "training*", "configs*", "data*"]
-exclude = ["tests*", "notebooks*", "docs*", "batch_scripts*", ".*"]
+[tool.setuptools]
+packages = ["models", "training", "configs", "data"]
 
 [tool.ruff.lint]
 select = ["E", "F", "W", "I", "B", "SIM"]
