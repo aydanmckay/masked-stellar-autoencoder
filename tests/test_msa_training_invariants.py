@@ -54,6 +54,34 @@ def test_reduce_finetune_prediction_median_from_quantile_head():
     assert err is None
 
 
+def test_reduce_finetune_prediction_variations():
+    # 1. ftlf == "quantile"
+    y1 = torch.randn(4, 6, 3)
+    pt1, err1 = _reduce_finetune_prediction(y1, "quantile", linearprobe=False)
+    assert pt1 is y1
+    assert err1 is None
+
+    # 2. linearprobe == True
+    y2 = torch.randn(4, 6)
+    pt2, err2 = _reduce_finetune_prediction(y2, "mse", linearprobe=True)
+    assert pt2 is y2
+    assert err2 is None
+
+    # 3. Tuple input
+    mean = torch.randn(4, 6)
+    variance = torch.randn(4, 6)
+    y3 = (mean, variance)
+    pt3, err3 = _reduce_finetune_prediction(y3, "gaussian", linearprobe=False)
+    assert pt3 is mean
+    assert err3 is variance
+
+    # 4. Fallback for 2D tensor
+    y4 = torch.randn(4, 6)
+    pt4, err4 = _reduce_finetune_prediction(y4, "mse", linearprobe=False)
+    assert pt4 is y4
+    assert err4 is None
+
+
 def test_prediction_head_monotonic_quantiles():
     head = PredictionHead(latent_size=32, ft_label_dim=6, ft_activ=torch.nn.ReLU())
     z = torch.randn(4, 32)
