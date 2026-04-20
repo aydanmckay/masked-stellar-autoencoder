@@ -15,7 +15,7 @@ from models.checkpoint_load import torch_load_trusted
 def test_torch_load_trusted_accepts_numpy_in_dict(tmp_path):
     path = tmp_path / "ckpt_np.pth"
     torch.save({"meta": np.float64(1.5), "w": torch.ones(2)}, str(path))
-    out = torch_load_trusted(str(path), map_location="cpu")
+    out = torch_load_trusted(str(path), map_location="cpu", weights_only=False)
     assert isinstance(out["meta"], np.floating)
     assert out["w"].shape == (2,)
 
