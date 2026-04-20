@@ -32,3 +32,17 @@ def test_sigma_pinball_weights_zero_for_nan_target():
     w = _sigma_pinball_weights(sig, y, floor=1e-3, max_w=1e6, normalize_batch=False)
     assert w[0, 1].item() == 0.0
     assert w[0, 0].item() > 0.0
+
+
+def test_sigma_pinball_weights_extreme_values():
+    sig = torch.tensor([[0.0, 1e-12, float("inf")], [float("-inf"), float("nan"), 2.0]])
+    y = torch.ones_like(sig)
+
+    w = _sigma_pinball_weights(sig, y, floor=1e-3, max_w=100.0, normalize_batch=False)
+
+    assert w[0, 0].item() == 100.0
+    assert w[0, 1].item() == 100.0
+    assert torch.isclose(w[0, 2], torch.tensor(1.0 / (1.0 + 1e-6)))
+    assert torch.isclose(w[1, 0], torch.tensor(1.0 / (1.0 + 1e-6)))
+    assert torch.isclose(w[1, 1], torch.tensor(1.0 / (1.0 + 1e-6)))
+    assert torch.isclose(w[1, 2], torch.tensor(1.0 / (4.0 + 1e-6)))
