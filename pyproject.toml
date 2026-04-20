@@ -19,7 +19,9 @@ dependencies = [
 ]
 
 [tool.setuptools.packages.find]
+where = ["."]
 include = ["models*", "training*", "configs*", "data*"]
+exclude = ["tests*", "notebooks*", "docs*", "batch_scripts*", ".*"]
 
 [tool.ruff.lint]
 select = ["E", "F", "W", "I", "B", "SIM"]
