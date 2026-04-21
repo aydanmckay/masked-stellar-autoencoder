@@ -19,7 +19,7 @@ dependencies = [
 ]
 
 [tool.setuptools]
-packages = ["models", "training", "configs", "data"]
+packages = ["models", "training"]
 
 [tool.ruff.lint]
 select = ["E", "F", "W", "I", "B", "SIM"]
