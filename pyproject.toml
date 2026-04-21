@@ -22,8 +22,6 @@ dependencies = [
     "wandb>=0.16.0",
 ]
 
-[tool.setuptools.packages.find]
-where = ["src"]
 
 [tool.ruff.lint]
 select = ["E", "F", "W", "I", "B", "SIM"]
