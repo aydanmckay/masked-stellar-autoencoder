@@ -22,8 +22,6 @@ dependencies = [
     "wandb>=0.16.0",
 ]
 
-[tool.setuptools]
-package-dir = { "" = "src" }
 [tool.setuptools.packages.find]
 where = ["src"]
 
