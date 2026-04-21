@@ -563,16 +563,28 @@ def main():
         rp_e = process_xp_coeffs(rpe_ssl)
         del rpe_ssl
 
-        bprp = np.squeeze(np.hstack((bp, rp, bp_e, rp_e)))
-        bprp = bprp.reshape(-1, 220)
-        # sample = np.hstack((ssl_np, bprp))
-        bprp_df = pd.DataFrame(data=bprp, columns=process_labels)
+        # ⚡ Bolt Optimization: Avoid giant intermediate NumPy array memory spike
+        # Convert lists of lists to DataFrames individually and concat them.
+        # This significantly reduces peak memory usage.
+
+        bp_cols = process_labels[0:55]
+        rp_cols = process_labels[55:110]
+        bpe_cols = process_labels[110:165]
+        rpe_cols = process_labels[165:220]
+
+        # Use np.array to ensure correct reshaping
+        bp_df = pd.DataFrame(data=np.array(bp).reshape(-1, 55), columns=bp_cols)
+        rp_df = pd.DataFrame(data=np.array(rp).reshape(-1, 55), columns=rp_cols)
+        bpe_df = pd.DataFrame(data=np.array(bp_e).reshape(-1, 55), columns=bpe_cols)
+        rpe_df = pd.DataFrame(data=np.array(rp_e).reshape(-1, 55), columns=rpe_cols)
+
+        bprp_df = pd.concat([bp_df, rp_df, bpe_df, rpe_df], axis=1)
+
         print("cleaning rows")
         del bp
         del rp
         del bp_e
         del rp_e
-        del bprp
         gc.collect()
 
         print("creating df")
