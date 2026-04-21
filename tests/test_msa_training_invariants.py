@@ -5,7 +5,6 @@ Run from repo root: pytest tests/test_msa_training_invariants.py -v
 
 import pytest
 import torch
-
 from models.model import (
     EncoderDecoderLoss,
     PredictionHead,

@@ -23,9 +23,13 @@ def test_autoencoder_falls_back_to_pretrain_key():
 
 
 def test_autoencoder_missing_raises():
-    with pytest.raises(KeyError, match="Checkpoint must contain 'autoencoder_state_dict'"):
+    with pytest.raises(
+        KeyError, match="Checkpoint must contain 'autoencoder_state_dict'"
+    ):
         autoencoder_state_dict({})
-    with pytest.raises(KeyError, match="Checkpoint must contain 'autoencoder_state_dict'"):
+    with pytest.raises(
+        KeyError, match="Checkpoint must contain 'autoencoder_state_dict'"
+    ):
         autoencoder_state_dict({"wrong_key": 1, "another_wrong_key": 2})
 
 

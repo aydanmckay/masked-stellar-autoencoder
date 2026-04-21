@@ -2,16 +2,13 @@ import pytest
 import torch
 from models.model import LabelDifference
 
+
 def test_label_difference_l1():
     # Setup dummy labels: batch size of 3, label dimension of 2
-    labels = torch.tensor([
-        [1.0, 2.0],
-        [3.0, 0.0],
-        [-1.0, 5.0]
-    ])
+    labels = torch.tensor([[1.0, 2.0], [3.0, 0.0], [-1.0, 5.0]])
 
     # Instantiate the module
-    module = LabelDifference(distance_type='l1')
+    module = LabelDifference(distance_type="l1")
 
     # Run forward pass
     output = module(labels)
@@ -31,16 +28,13 @@ def test_label_difference_l1():
     # Pair (2, 1): 9
     # Pair (2, 2): 0
 
-    expected = torch.tensor([
-        [0.0, 4.0, 5.0],
-        [4.0, 0.0, 9.0],
-        [5.0, 9.0, 0.0]
-    ])
+    expected = torch.tensor([[0.0, 4.0, 5.0], [4.0, 0.0, 9.0], [5.0, 9.0, 0.0]])
 
     assert torch.allclose(output, expected)
 
+
 def test_label_difference_invalid_type():
-    module = LabelDifference(distance_type='l2')
+    module = LabelDifference(distance_type="l2")
     labels = torch.randn(3, 2)
 
     with pytest.raises(ValueError, match="l2"):

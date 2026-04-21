@@ -1175,8 +1175,8 @@ class TabResnetWrapper(BaseEstimator):
 
         enc_lr = float(ft_encoder_lr) if ft_encoder_lr is not None else float(self.lr)
         head_step = max(1, int(ft_scheduler_head_step_epochs))
-        head_lambda = lambda epoch, h=ft_scheduler_head_decay, s=head_step: h ** (
-            epoch // s
+        head_lambda = lambda epoch, h=ft_scheduler_head_decay, s=head_step: (
+            h ** (epoch // s)
         )
         encoder_lambda = lambda epoch, b=ft_scheduler_encoder_decay: b**epoch
 
