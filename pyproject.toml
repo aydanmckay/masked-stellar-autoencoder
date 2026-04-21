@@ -22,6 +22,37 @@ dependencies = [
     "wandb>=0.16.0",
 ]
 
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pixi.workspace]
+channels = ["conda-forge"]
+platforms = ["osx-arm64", "linux-64"]
+
+[tool.pixi.tasks]
+lint = "ruff check ."
+format = "ruff format ."
+test = "pytest"
+
+[tool.pixi.dependencies]
+python = "3.12.*"
+pytorch = ">=2.1.0"
+numpy = ">=1.25.0"
+astropy = ">=6.0.0"
+pandas = ">=2.1.0"
+scikit-learn = ">=1.3.0"
+scipy = ">=1.11.0"
+h5py = ">=3.10.0"
+matplotlib = ">=3.8.0"
+tqdm = ">=4.66.0"
+pyyaml = ">=6.0.1"
+wandb = ">=0.16.0"
+ruff = "*"
+pytest = "*"
+
+[tool.pixi.pypi-dependencies]
+masked-stellar-autoencoder = { path = ".", editable = true }
+rtdl_num_embeddings = ">=0.0.12"
 
 [tool.ruff.lint]
 select = ["E", "F", "W", "I", "B", "SIM"]
@@ -30,15 +61,3 @@ ignore = [
     "SIM105", "SIM101", "B023", "SIM118", "B018", "SIM117", "SIM210", "E402",
     "SIM103", "B011", "B017", "B024", "SIM113", "E731", "F821"
 ]
-
-[tool.mypy]
-python_version = "3.12"
-explicit_package_bases = true
-ignore_missing_imports = true
-check_untyped_defs = false
-warn_return_any = false
-disable_error_code = ["union-attr", "misc", "dict-item", "has-type", "arg-type", "no-redef", "attr-defined", "assignment", "operator", "var-annotated", "call-overload", "return-value", "valid-type", "index", "no-any-return", "call-arg"]
-
-[tool.codespell]
-ignore-words-list = "activ,strat,oen,suh,vas,mye,fo,hte,ue,nax,ags,bu,acn,vew,ecept,ure,ege,edn,whe,inh,ths,proceedure,eazy,clen,acess,astroid,degress,som,sompz,slac,ges,recal,litterature,ned,aas,alph,legac"
-skip = "*.ipynb,pyproject.toml,*.json,pixi.lock,paper/*.cls"
