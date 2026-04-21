@@ -121,7 +121,7 @@ def _quartile_bin_metrics(
     edges = [(-np.inf, qs[0]), (qs[0], qs[1]), (qs[1], qs[2]), (qs[2], np.inf)]
     tags = ["q0_25", "q25_50", "q50_75", "q75_100"]
     block: dict = {}
-    for (lo, hi), tag in zip(edges, tags):
+    for (lo, hi), tag in zip(edges, tags, strict=False):
         m = (aux > lo) & (aux <= hi) & fin
         key = f"{prefix}_{tag}"
         if int(np.count_nonzero(m)) < min_bin:
@@ -380,7 +380,7 @@ def main():
         edges = [(-np.inf, qs[0]), (qs[0], qs[1]), (qs[1], qs[2]), (qs[2], np.inf)]
         tag_names = ["pi_q0_25", "pi_q25_50", "pi_q50_75", "pi_q75_100"]
         block: dict = {}
-        for (lo, hi), tag in zip(edges, tag_names):
+        for (lo, hi), tag in zip(edges, tag_names, strict=False):
             m = (pi > lo) & (pi <= hi) & fin
             key = f"{prefix}_{tag}"
             if m.sum() < 5:
