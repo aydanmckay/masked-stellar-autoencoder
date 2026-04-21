@@ -12,7 +12,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Configure git for private repos
-        run: git config --global url."https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/".insteadOf "https://github.com/"
+        run: git config --global url."https://x-access-token:${{ secrets.PAT_FOR_PRIVATE_REPOS }}@github.com/".insteadOf "https://github.com/"
       - uses: prefix-dev/setup-pixi@v0.8.0
         with:
           pixi-version: latest
