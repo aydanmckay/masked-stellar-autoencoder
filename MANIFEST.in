@@ -1,0 +1,2 @@
+prune .pixi
+prune .venv
