@@ -1,6 +1,6 @@
 # Core ML framework
 torch>=2.1.0
-git+https://github.com/yandex-research/rtdl-num-embeddings.git
+git+https://github.com/yandex-research/rtdl-num-embeddings.git#subdirectory=package
 
 # Numerical computing
 numpy>=1.25.0

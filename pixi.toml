@@ -26,4 +26,4 @@ pytest = "*"
 
 [pypi-dependencies]
 masked-stellar-autoencoder = { path = ".", editable = true }
-rtdl-num-embeddings = { git = "https://github.com/yandex-research/rtdl-num-embeddings.git" }
+rtdl-num-embeddings = { git = "https://github.com/yandex-research/rtdl-num-embeddings.git", subdirectory = "package" }
