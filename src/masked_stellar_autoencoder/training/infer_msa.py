@@ -75,7 +75,7 @@ def infer_catalogue(
     return np.concatenate(embeddings, axis=0), np.concatenate(quantiles, axis=0)
 
 
-def main():
+def parse_args():
     ap = argparse.ArgumentParser()
     ap.add_argument("--config", required=True)
     ap.add_argument("--checkpoint", required=True, help="Fine-tuned .pth file")
@@ -92,20 +92,10 @@ def main():
         default=None,
         help="CQR bounds json to rigidly calibrate lower/upper bounds",
     )
-    args = ap.parse_args()
+    return ap.parse_args()
 
-    device = torch.device(
-        args.device or ("cuda" if torch.cuda.is_available() else "cpu")
-    )
 
-    with open(args.config) as f:
-        config = yaml.safe_load(f)
-    expand_config_paths(config)
-
-    print(f"Loading weights from {args.checkpoint}...")
-    state = torch_load_trusted(args.checkpoint, map_location=device)
-
-    # 1. Pipeline dynamic scaler generation (Requires generating split on finetune DB)
+def load_scalers(state, config):
     if state.get("featurescaler") is None or state.get("label_scalers") is None:
         print(
             "Warning: Scalers not found in checkpoint. Falling back to dynamic pre-fitting (will read entire training catalogue into RAM)..."
@@ -139,11 +129,13 @@ def main():
             "scalers": label_scalers,
             "featurescaler": featurescaler,
         }
+    return pack, featurescaler, label_scalers, label_names, cols, recon_cols
 
-    # 2. Loading inference rows
-    if args.inference_data:
-        print(f"Loading external inference catalogue: {args.inference_data}")
-        with h5py.File(args.inference_data, "r") as f:
+
+def load_inference_data(inference_data, pack, featurescaler, cols):
+    if inference_data:
+        print(f"Loading external inference catalogue: {inference_data}")
+        with h5py.File(inference_data, "r") as f:
             if "table" in f:
                 dset = f["table"]
             else:
@@ -153,27 +145,26 @@ def main():
                 {c: dset[c][:] for c in cols if c in dset.dtype.names}
             )
             source_ids = f.get("source_id", np.arange(len(df_inf)))[:]
+
+        # Standardize missing as pandas nans before scaler
+        X_infer = df_inf.values
+        X_infer_scaled = featurescaler.transform(X_infer)
     else:
         print(
             "No --inference-data provided, inferring on base config testset fraction."
         )
-        df_inf = pd.DataFrame(pack["testset"], columns=cols)
         # Assuming prepare_finetune_arrays already robust scaled
         X_infer_scaled = pack["testset"]
         source_ids = np.arange(len(X_infer_scaled))
+    return source_ids, X_infer_scaled
 
-    # Apply external scaling if loaded externally
-    if args.inference_data:
-        # Standardize missing as pandas nans before scaler
-        X_infer = df_inf.values
-        X_infer_scaled = featurescaler.transform(X_infer)
 
-    # 3. Model construction
+def build_and_load_models(config, num_cols, num_recon_cols, num_labels, state, device):
     blocks_dims = config["model"]["layer_dims"]
     model = make_model(
-        len(cols),
+        num_cols,
         blocks_dims,
-        len(recon_cols),
+        num_recon_cols,
         config["model"]["pt_activ_func"],
         config["model"]["rtdl_embed"],
         config["model"]["norm"],
@@ -186,10 +177,61 @@ def main():
         if act_name == "gelu"
         else (torch.nn.ELU() if act_name == "elu" else torch.nn.ReLU())
     )
-    head = PredictionHead(blocks_dims[-1], len(label_names), ftact).to(device)
+    head = PredictionHead(blocks_dims[-1], num_labels, ftact).to(device)
 
     model.load_state_dict(autoencoder_state_dict(state))
     head.load_state_dict(prediction_head_state_dict(state))
+    return model, head
+
+
+def save_predictions(out_path, source_ids, label_names, phys_q, embeddings):
+    out_dict = {"source_id": source_ids}
+
+    # Store predictions via METHODOLOGY policy `PARAM_med` alongside uncertainty bounds
+    for idx, name in enumerate(label_names):
+        out_dict[f"{name}_lower"] = phys_q[:, idx, 0]
+        out_dict[f"{name}_med"] = phys_q[:, idx, 1]
+        out_dict[f"{name}_upper"] = phys_q[:, idx, 2]
+
+    # Also publish extracted representations (usually the 256-D vectors)
+    for embed_idx in range(embeddings.shape[1]):
+        out_dict[f"embedding_{embed_idx}"] = embeddings[:, embed_idx]
+
+    df_out = pd.DataFrame(out_dict)
+
+    os.makedirs(os.path.dirname(os.path.abspath(out_path)), exist_ok=True)
+    df_out.to_csv(out_path, index=False)
+    print(f"\nInference Complete. Saved {len(df_out)} targets to {out_path}")
+
+
+def main():
+    args = parse_args()
+
+    device = torch.device(
+        args.device or ("cuda" if torch.cuda.is_available() else "cpu")
+    )
+
+    with open(args.config) as f:
+        config = yaml.safe_load(f)
+    expand_config_paths(config)
+
+    print(f"Loading weights from {args.checkpoint}...")
+    state = torch_load_trusted(args.checkpoint, map_location=device)
+
+    # 1. Pipeline dynamic scaler generation (Requires generating split on finetune DB)
+    pack, featurescaler, label_scalers, label_names, cols, recon_cols = load_scalers(
+        state, config
+    )
+
+    # 2. Loading inference rows
+    source_ids, X_infer_scaled = load_inference_data(
+        args.inference_data, pack, featurescaler, cols
+    )
+
+    # 3. Model construction
+    model, head = build_and_load_models(
+        config, len(cols), len(recon_cols), len(label_names), state, device
+    )
 
     # 4. Generate Embeddings & Predictions
     print("Executing GPU Inference...")
@@ -211,23 +253,7 @@ def main():
     phys_q = _inverse_quantile_block(preds_q, label_scalers, pack)
 
     # 5. Assemble and save mapping output
-    out_dict = {"source_id": source_ids}
-
-    # Store predictions via METHODOLOGY policy `PARAM_med` alongside uncertainty bounds
-    for idx, name in enumerate(label_names):
-        out_dict[f"{name}_lower"] = phys_q[:, idx, 0]
-        out_dict[f"{name}_med"] = phys_q[:, idx, 1]
-        out_dict[f"{name}_upper"] = phys_q[:, idx, 2]
-
-    # Also publish extracted representations (usually the 256-D vectors)
-    for embed_idx in range(embeddings.shape[1]):
-        out_dict[f"embedding_{embed_idx}"] = embeddings[:, embed_idx]
-
-    df_out = pd.DataFrame(out_dict)
-
-    os.makedirs(os.path.dirname(os.path.abspath(args.out)), exist_ok=True)
-    df_out.to_csv(args.out, index=False)
-    print(f"\nInference Complete. Saved {len(df_out)} targets to {args.out}")
+    save_predictions(args.out, source_ids, label_names, phys_q, embeddings)
 
 
 if __name__ == "__main__":
