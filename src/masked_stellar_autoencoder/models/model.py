@@ -5,7 +5,6 @@ import os
 import random
 from typing import Optional
 
-# import h5py
 import numpy as np
 import torch
 import torch.nn as nn
@@ -30,11 +29,9 @@ class MaskedGaussianNLLLoss(nn.Module):
         if isinstance(target_var, float):
             if target_var < 0:
                 raise ValueError("var has negative entry/entries")
-            # target_var = target_var * torch.ones_like(input)
         elif torch.any(target_var < 0):
             raise ValueError("var has negative entry/entries")
 
-        # mask = ~torch.isnan(target)
         mask = (~torch.isnan(target)) & (~torch.isnan(target_var))
 
         pred_mean = pred_mean[mask]
@@ -70,7 +67,6 @@ class WeightedMaskedMSELoss(nn.Module):
 
     def forward(self, target, input, weight):
         # Create mask for non-NaN targets
-        # mask = ~torch.isnan(weight)
         mask = (~torch.isnan(target)) & (~torch.isnan(weight))
 
         masked_input = input[mask]
@@ -78,13 +74,6 @@ class WeightedMaskedMSELoss(nn.Module):
         masked_weights = weight[mask]
         masked_error = (masked_input - masked_target) ** 2
         masked_error = masked_error * masked_weights
-
-        # Apply mask
-        # diff_squared = (input - target)**2
-        # weighted_error = diff_squared * weight
-
-        # masked_error = weighted_error[mask]
-        # masked_weights = weight[mask]
 
         if self.reduction == "mean":
             return masked_error.sum() / (masked_weights.sum() + self.eps)
@@ -104,12 +93,6 @@ class MaskedMSELoss(nn.Module):
         mask = ~torch.isnan(target)
 
         # Compute squared error only where target is not NaN
-
-        # old way
-        # squared_error = (input - target)**2
-        # masked_error = squared_error[mask]
-
-        # new way
         masked_input = input[mask]
         masked_target = target[mask]
         masked_error = (masked_input - masked_target) ** 2
@@ -855,17 +838,6 @@ class TabResnetWrapper(BaseEstimator):
                 try:
                     X_train, eX_train = self._load_data(key)
 
-                    # Memory-efficient data loading
-                    # if X_train.shape[0] > 100000:  # For large datasets, use pin_memory
-                    #     train_loader = DataLoader(TensorDataset(X_train, eX_train),
-                    #                              batch_size=mini_batch,
-                    #                              shuffle=True,
-                    #                              pin_memory=True,
-                    #                              num_workers=2)
-                    # else:
-                    #     train_loader = DataLoader(TensorDataset(X_train, eX_train),
-                    #                              batch_size=mini_batch,
-                    #                              shuffle=True)
                     train_loader = DataLoader(
                         TensorDataset(X_train, eX_train),
                         batch_size=mini_batch,
@@ -908,7 +880,6 @@ class TabResnetWrapper(BaseEstimator):
                         )
                         optimizer.step()
 
-                        # print(loss)
                         epoch_loss += loss.item()
 
                     loss_div += len(train_loader)
@@ -935,7 +906,6 @@ class TabResnetWrapper(BaseEstimator):
                 logging.info(f"{epoch + 1}, Validation Loss: {validation_loss}")
                 running_pt_validation_loss.append(validation_loss)
 
-            # torch.save(self.model.state_dict(), self.pt_save_str) # old saving method
             torch.save(
                 {
                     "epoch": epoch + 1,
@@ -950,7 +920,6 @@ class TabResnetWrapper(BaseEstimator):
 
             if self.checkpoint_interval is not None:
                 if (epoch + 1) % self.checkpoint_interval == 0:
-                    # torch.save(self.model.state_dict(), self.pt_save_str.split('.')[0]+'_checkpoint_'+str(epoch+1)+'.pth')
                     torch.save(
                         {
                             "epoch": epoch + 1,
