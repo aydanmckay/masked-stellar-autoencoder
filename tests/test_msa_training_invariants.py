@@ -5,7 +5,8 @@ Run from repo root: pytest tests/test_msa_training_invariants.py -v
 
 import pytest
 import torch
-from models.model import (
+
+from masked_stellar_autoencoder.models.model import (
     EncoderDecoderLoss,
     PredictionHead,
     _reduce_finetune_prediction,

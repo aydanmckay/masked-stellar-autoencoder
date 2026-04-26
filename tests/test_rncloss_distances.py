@@ -8,7 +8,7 @@ sys.path.insert(0, _repo)
 
 torch = pytest.importorskip("torch")
 
-from models.model import FeatureSimilarity, LabelDifference
+from masked_stellar_autoencoder.models.model import FeatureSimilarity, LabelDifference
 
 
 def test_label_difference_valid_type():

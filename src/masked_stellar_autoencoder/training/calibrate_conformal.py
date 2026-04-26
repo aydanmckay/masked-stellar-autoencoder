@@ -23,7 +23,7 @@ _repo = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 sys.path.insert(0, _repo)
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-from conformal import calibrate_cqr_offsets  # noqa: E402
+from .conformal import calibrate_cqr_offsets  # noqa: E402
 
 
 def main() -> None:

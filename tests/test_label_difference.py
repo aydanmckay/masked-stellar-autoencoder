@@ -1,6 +1,7 @@
 import pytest
 import torch
-from models.model import LabelDifference
+
+from masked_stellar_autoencoder.models.model import LabelDifference
 
 
 def test_label_difference_l1():

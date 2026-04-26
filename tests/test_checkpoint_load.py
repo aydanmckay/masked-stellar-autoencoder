@@ -9,7 +9,7 @@ import torch
 _repo = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 sys.path.insert(0, _repo)
 
-from models.checkpoint_load import torch_load_trusted
+from masked_stellar_autoencoder.models.checkpoint_load import torch_load_trusted
 
 
 def test_torch_load_trusted_accepts_numpy_in_dict(tmp_path):

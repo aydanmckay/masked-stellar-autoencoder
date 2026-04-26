@@ -1,6 +1,7 @@
 import pytest
 import torch.nn as nn
-from models.blocks import ResBlock
+
+from masked_stellar_autoencoder.models.blocks import ResBlock
 
 
 def test_resblock_activation_elu():

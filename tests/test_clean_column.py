@@ -1,6 +1,7 @@
 import numpy as np
 import pytest
-from models.model import TabResnetWrapper
+
+from masked_stellar_autoencoder.models.model import TabResnetWrapper
 
 
 def test_clean_column_byte_strings():

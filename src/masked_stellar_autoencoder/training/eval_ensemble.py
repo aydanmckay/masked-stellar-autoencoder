@@ -36,12 +36,13 @@ repo_root = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 sys.path.insert(0, repo_root)
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-from checkpoint_keys import autoencoder_state_dict, prediction_head_state_dict
-from config_paths import expand_config_paths
-from conformal import apply_cqr_offsets_inplace, interval_coverage
-from finetune_data import prepare_finetune_arrays
 from models.checkpoint_load import torch_load_trusted
 from models.model import PredictionHead, make_model
+
+from .checkpoint_keys import autoencoder_state_dict, prediction_head_state_dict
+from .config_paths import expand_config_paths
+from .conformal import apply_cqr_offsets_inplace, interval_coverage
+from .finetune_data import prepare_finetune_arrays
 
 
 def _inverse_labels(

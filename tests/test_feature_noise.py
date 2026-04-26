@@ -4,7 +4,7 @@ import sys
 _repo = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 sys.path.insert(0, os.path.join(_repo, "training"))
 
-from feature_noise import pert_channel_scale_vector
+from masked_stellar_autoencoder.training.feature_noise import pert_channel_scale_vector
 
 
 def test_pert_channel_scale_ebv():

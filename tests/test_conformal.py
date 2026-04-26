@@ -7,7 +7,7 @@ import pytest
 _training = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "training"))
 sys.path.insert(0, _training)
 
-from conformal import (  # noqa: E402
+from masked_stellar_autoencoder.training.conformal import (  # noqa: E402
     apply_cqr_offsets_inplace,
     calibrate_cqr_offsets,
     interval_coverage,

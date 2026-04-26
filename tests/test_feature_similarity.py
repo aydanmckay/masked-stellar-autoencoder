@@ -1,8 +1,9 @@
 import numpy as np
 import pytest
 import torch
-from models.model import FeatureSimilarity
 from scipy.spatial.distance import cdist
+
+from masked_stellar_autoencoder.models.model import FeatureSimilarity
 
 
 def test_feature_similarity_l2_basic():

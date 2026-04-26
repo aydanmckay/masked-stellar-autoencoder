@@ -6,7 +6,7 @@ import numpy as np
 _repo = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 sys.path.insert(0, os.path.join(_repo, "training"))
 
-from astrometry_features import (
+from masked_stellar_autoencoder.training.astrometry_features import (
     apply_parallax_input_policy,
     parallax_label_error_log10,
     parallax_label_log10,

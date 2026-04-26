@@ -8,7 +8,10 @@ import pytest
 _repo = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 sys.path.insert(0, os.path.join(_repo, "training"))
 
-from checkpoint_keys import autoencoder_state_dict, prediction_head_state_dict
+from masked_stellar_autoencoder.training.checkpoint_keys import (
+    autoencoder_state_dict,
+    prediction_head_state_dict,
+)
 
 
 def test_autoencoder_prefers_finetune_key():

@@ -4,7 +4,11 @@ import sys
 _repo = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 sys.path.insert(0, os.path.join(_repo, "training"))
 
-from config_paths import expand_config_paths, expand_path, ft_checkpoint_paths
+from masked_stellar_autoencoder.training.config_paths import (
+    expand_config_paths,
+    expand_path,
+    ft_checkpoint_paths,
+)
 
 
 def test_expand_path_env(monkeypatch):
