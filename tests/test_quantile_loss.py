@@ -5,8 +5,6 @@ import sys
 
 import pytest
 
-_repo = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
-sys.path.insert(0, _repo)
 
 torch = pytest.importorskip("torch")
 

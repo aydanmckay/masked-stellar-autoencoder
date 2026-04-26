@@ -3,8 +3,6 @@ import sys
 
 import numpy as np
 
-_repo = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
-sys.path.insert(0, os.path.join(_repo, "training"))
 
 from masked_stellar_autoencoder.training.astrometry_features import (
     apply_parallax_input_policy,

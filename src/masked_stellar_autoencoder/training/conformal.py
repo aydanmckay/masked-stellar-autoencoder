@@ -98,13 +98,17 @@ def interval_coverage(
     y_true = np.asarray(y_true, dtype=np.float64)
     q_lo = np.asarray(q_lo, dtype=np.float64)
     q_hi = np.asarray(q_hi, dtype=np.float64)
+
     m = np.isfinite(y_true) & np.isfinite(q_lo) & np.isfinite(q_hi) & (q_lo <= q_hi)
-    ell = y_true.shape[1]
-    out = np.full(ell, np.nan, dtype=np.float64)
-    for j in range(ell):
-        mj = m[:, j]
-        if int(np.count_nonzero(mj)) == 0:
-            continue
-        inside = (y_true[mj, j] >= q_lo[mj, j]) & (y_true[mj, j] <= q_hi[mj, j])
-        out[j] = float(np.mean(inside))
+
+    # Suppress RuntimeWarnings for invalid comparisons with NaNs, which we explicitly handle
+    with np.errstate(invalid="ignore"):
+        inside = (y_true >= q_lo) & (y_true <= q_hi) & m
+
+    valid_counts = m.sum(axis=0)
+    inside_counts = inside.sum(axis=0)
+
+    out = np.full(y_true.shape[1], np.nan, dtype=np.float64)
+    np.divide(inside_counts, valid_counts, out=out, where=valid_counts > 0)
+
     return out

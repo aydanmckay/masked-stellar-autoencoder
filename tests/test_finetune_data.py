@@ -5,8 +5,6 @@ from unittest.mock import MagicMock, patch
 import pandas as pd
 import pytest
 
-_repo = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
-sys.path.insert(0, os.path.join(_repo, "training"))
 
 from masked_stellar_autoencoder.training.finetune_data import prepare_finetune_arrays
 

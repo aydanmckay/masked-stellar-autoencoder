@@ -5,8 +5,6 @@ import sys
 
 import pytest
 
-_repo = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
-sys.path.insert(0, os.path.join(_repo, "training"))
 
 from masked_stellar_autoencoder.training.checkpoint_keys import (
     autoencoder_state_dict,
