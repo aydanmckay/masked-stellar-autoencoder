@@ -297,7 +297,7 @@ def main():
         ftact = torch.nn.GELU()
     loaded_states = []
     for ckpt in args.checkpoints:
-        state = torch_load_trusted(ckpt, map_location=device)
+        state = torch_load_trusted(ckpt, map_location="cpu")
         loaded_states.append(state)
 
     ensemble_linear = bool(loaded_states[0].get("linear_probe", False))
