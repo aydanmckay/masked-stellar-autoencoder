@@ -93,7 +93,7 @@ finetuning:
   lr_scheduler_head_decay: 0.5
   lr_scheduler_head_step_epochs: 10
   opt: 'adamw'
-  activ: 'relu'
+  active: 'relu'
   l2: 0.0
   lf: 'quantile'
   pert_features: true

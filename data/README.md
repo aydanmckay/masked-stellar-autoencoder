@@ -4,7 +4,7 @@ The data fed to the model has a specific structure which is created using the fo
 
 ---
 
-## Pre-Training Dataset Creation Proceedure
+## Pre-Training Dataset Creation Procedure
 
 - source_ids_x_file_names.py to create the reference file for all the XP continuous and Gaia source files.
 - photometric-dataset-handling.ipynb to clean the photometric datasets before combining if needed.

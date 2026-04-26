@@ -11,7 +11,7 @@ class ResBlock(nn.Module):
     """
 
     def __init__(
-        self, in_features, out_features, dropout_prob=0.1, activ="elu", norm="batch"
+        self, in_features, out_features, dropout_prob=0.1, active="elu", norm="batch"
     ):
         super(ResBlock, self).__init__()
         self.lin1 = nn.Linear(in_features, out_features, bias=False)
@@ -22,15 +22,15 @@ class ResBlock(nn.Module):
         else:
             raise ValueError(f"Unsupported norm type: {norm}. Use 'batch' or 'layer'")
 
-        if activ == "elu":
-            self.activ = nn.ELU(inplace=True)
-        elif activ == "gelu":
-            self.activ = nn.GELU()
-        elif activ == "relu":
-            self.activ = nn.ReLU(inplace=True)
+        if active == "elu":
+            self.active = nn.ELU(inplace=True)
+        elif active == "gelu":
+            self.active = nn.GELU()
+        elif active == "relu":
+            self.active = nn.ReLU(inplace=True)
         else:
             raise ValueError(
-                f"Unsupported activation type: {activ}. Use 'elu', 'gelu', or 'relu'"
+                f"Unsupported activation type: {active}. Use 'elu', 'gelu', or 'relu'"
             )
         self.dp = nn.Dropout(p=dropout_prob)
         self.lin2 = nn.Linear(out_features, out_features, bias=False)
@@ -49,7 +49,7 @@ class ResBlock(nn.Module):
 
         out = self.lin1(x)
         out = self.normal(out)
-        out = self.activ(out)
+        out = self.active(out)
         out = self.dp(out)
 
         out = self.lin2(out)
@@ -61,7 +61,7 @@ class ResBlock(nn.Module):
 
         # skip-connect and finish block
         out += identity
-        out = self.activ(out)
+        out = self.active(out)
         return out
 
 
@@ -77,7 +77,7 @@ class DenseResnet(nn.Module):
         num_blocks_per_layer=1,
         pe=False,
         d_embedding=8,
-        activ="elu",
+        active="elu",
         norm="batch",
     ):
         super(DenseResnet, self).__init__()
@@ -94,18 +94,18 @@ class DenseResnet(nn.Module):
                     )
                     layers.append(nn.Flatten())
                     layers.append(nn.Linear(input_dim * d_embedding, dim))
-                    layers.append(ResBlock(dim, dim, activ=activ, norm=norm))
+                    layers.append(ResBlock(dim, dim, active=active, norm=norm))
                 else:
-                    layers.append(ResBlock(input_dim, dim, activ=activ, norm=norm))
+                    layers.append(ResBlock(input_dim, dim, active=active, norm=norm))
             else:
                 # input_dim_for_block = blocks_dims[i-1] if _ == 0 else dim
                 for j in range(num_blocks_per_layer):
                     if j == 0:
                         layers.append(
-                            ResBlock(blocks_dims[i - 1], dim, activ=activ, norm=norm)
+                            ResBlock(blocks_dims[i - 1], dim, active=active, norm=norm)
                         )
                     else:
-                        layers.append(ResBlock(dim, dim, activ=activ, norm=norm))
+                        layers.append(ResBlock(dim, dim, active=active, norm=norm))
 
         self.dense_resnet = nn.Sequential(*layers)
 
@@ -125,7 +125,7 @@ class TabResnetEncoder(nn.Module):
         blocks_dims,
         pe_bool=True,
         d_embedding=8,
-        activ="elu",
+        active="elu",
         norm="batch",
     ):
         super(TabResnetEncoder, self).__init__()
@@ -136,7 +136,7 @@ class TabResnetEncoder(nn.Module):
             blocks_dims=blocks_dims,
             pe=pe_bool,
             d_embedding=d_embedding,
-            activ=activ,
+            active=active,
             norm=norm,
         )
 
@@ -151,7 +151,7 @@ class TabResnet(nn.Module):
         blocks_dims,
         output_cols=None,
         d_embedding=8,
-        activ="elu",
+        active="elu",
         norm="batch",
         decoder_dims=None,
     ):
@@ -161,7 +161,7 @@ class TabResnet(nn.Module):
             continuous_cols=continuous_cols,
             blocks_dims=blocks_dims,
             d_embedding=d_embedding,
-            activ=activ,
+            active=active,
             pe_bool=True,
             norm=norm,
         )
@@ -174,7 +174,7 @@ class TabResnet(nn.Module):
             input_dim=blocks_dims[-1],
             blocks_dims=decoder_dims,
             d_embedding=d_embedding,
-            activ=activ,
+            active=active,
             pe=False,
             norm=norm,
         )

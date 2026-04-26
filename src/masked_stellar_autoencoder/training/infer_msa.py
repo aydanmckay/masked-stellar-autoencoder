@@ -171,7 +171,7 @@ def build_and_load_models(config, num_cols, num_recon_cols, num_labels, state, d
         decoder_dims=config["model"].get("decoder_dims"),
     ).to(device)
 
-    act_name = config["finetuning"].get("activ", "relu")
+    act_name = config["finetuning"].get("active", "relu")
     ftact = (
         torch.nn.GELU()
         if act_name == "gelu"

@@ -1658,7 +1658,7 @@ class TabResnetWrapper(BaseEstimator):
 
 
 def make_model(
-    input_dim, layer_dims, output_dim, activ, rtdl_embed_dim, norm, decoder_dims=None
+    input_dim, layer_dims, output_dim, active, rtdl_embed_dim, norm, decoder_dims=None
 ):
     """
     Helper function to make the MSA in the same file as the wrapper
@@ -1669,7 +1669,7 @@ def make_model(
         Residual block dimensions. The list is discretized, being the specific widths for each individual layer.
     output_dim :: int
         Length of the output features, those features that are reconstructed.
-    activ :: string
+    active :: string
         String of the possible activation functions. Must be one of ('elu', 'relu', or 'gelu').
     rtdl_embed_dim :: int
         Embedding dimension the input data is blown up to.
@@ -1684,7 +1684,7 @@ def make_model(
         continuous_cols=input_dim,
         blocks_dims=layer_dims,
         output_cols=output_dim,
-        activ=activ,
+        active=active,
         d_embedding=rtdl_embed_dim,
         norm=norm,
         decoder_dims=decoder_dims,

@@ -289,7 +289,7 @@ def main():
         config["model"]["norm"],
         decoder_dims=config["model"].get("decoder_dims"),
     ).to(device)
-    act = config["finetuning"].get("activ", "relu")
+    act = config["finetuning"].get("active", "relu")
     if act == "relu":
         ftact = torch.nn.ReLU()
     elif act == "elu":

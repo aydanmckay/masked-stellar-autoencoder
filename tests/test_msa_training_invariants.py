@@ -115,7 +115,7 @@ def test_tabresnet_forward_smoke_cuda():
             input_dim=138,
             layer_dims=[128, 64],
             output_dim=120,
-            activ="elu",
+            active="elu",
             rtdl_embed_dim=4,
             norm="layer",
             decoder_dims=[64, 128],
@@ -134,7 +134,7 @@ def test_tabresnet_forward_smoke_cpu():
             input_dim=32,
             layer_dims=[64, 32],
             output_dim=24,
-            activ="elu",
+            active="elu",
             rtdl_embed_dim=4,
             norm="layer",
         )

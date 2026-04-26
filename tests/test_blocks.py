@@ -5,20 +5,20 @@ from masked_stellar_autoencoder.models.blocks import ResBlock
 
 
 def test_resblock_activation_elu():
-    block = ResBlock(in_features=10, out_features=10, activ="elu")
-    assert isinstance(block.activ, nn.ELU)
-    assert block.activ.inplace is True
+    block = ResBlock(in_features=10, out_features=10, active="elu")
+    assert isinstance(block.active, nn.ELU)
+    assert block.active.inplace is True
 
 
 def test_resblock_activation_gelu():
-    block = ResBlock(in_features=10, out_features=10, activ="gelu")
-    assert isinstance(block.activ, nn.GELU)
+    block = ResBlock(in_features=10, out_features=10, active="gelu")
+    assert isinstance(block.active, nn.GELU)
 
 
 def test_resblock_activation_relu():
-    block = ResBlock(in_features=10, out_features=10, activ="relu")
-    assert isinstance(block.activ, nn.ReLU)
-    assert block.activ.inplace is True
+    block = ResBlock(in_features=10, out_features=10, active="relu")
+    assert isinstance(block.active, nn.ReLU)
+    assert block.active.inplace is True
 
 
 def test_resblock_unsupported_activation():
@@ -26,7 +26,7 @@ def test_resblock_unsupported_activation():
         ValueError,
         match="Unsupported activation type: foo. Use 'elu', 'gelu', or 'relu'",
     ):
-        ResBlock(in_features=10, out_features=10, activ="foo")
+        ResBlock(in_features=10, out_features=10, active="foo")
 
 
 def test_resblock_norm_batch():

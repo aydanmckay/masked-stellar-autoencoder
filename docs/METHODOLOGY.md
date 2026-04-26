@@ -118,7 +118,7 @@ Linear probe: encoder frozen; only the probe uses `finetuning.lr` and the **head
 ### Activations (reminder)
 
 - **Backbone:** `model.pt_activ_func` (`elu` / `relu` / `gelu`) for encoder and decoder `ResBlock`s.
-- **Prediction head:** `finetuning.activ` — may differ from the backbone (default trunk ELU, head ReLU in `finetune.yaml`).
+- **Prediction head:** `finetuning.active` — may differ from the backbone (default trunk ELU, head ReLU in `finetune.yaml`).
 
 ## Architecture and optimisation (validation protocol)
 

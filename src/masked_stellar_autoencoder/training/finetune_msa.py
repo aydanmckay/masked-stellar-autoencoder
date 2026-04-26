@@ -184,7 +184,7 @@ def main():
             rncloss=config["finetuning"]["rncloss"],
             ftlr=config["finetuning"]["lr"],
             ftopt=config["finetuning"]["opt"],
-            ftact=config["finetuning"]["activ"],
+            ftact=config["finetuning"]["active"],
             ftl2=config["finetuning"]["l2"],
             ftlf=config["finetuning"]["lf"],
             ftlabeldim=len(pack["label_names"]),
