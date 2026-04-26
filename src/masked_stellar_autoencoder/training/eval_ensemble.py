@@ -295,20 +295,25 @@ def main():
         ftact = torch.nn.ELU()
     else:
         ftact = torch.nn.GELU()
-    probe0 = torch_load_trusted(args.checkpoints[0], map_location=device)
-    ensemble_linear = bool(probe0.get("linear_probe", False))
+    loaded_states = []
+    for ckpt in args.checkpoints:
+        state = torch_load_trusted(ckpt, map_location=device)
+        loaded_states.append(state)
+
+    ensemble_linear = bool(loaded_states[0].get("linear_probe", False))
+    for i, state in enumerate(loaded_states):
+        if bool(state.get("linear_probe", False)) != ensemble_linear:
+            raise ValueError(
+                f"All checkpoints must share the same linear_probe flag (mismatch at {args.checkpoints[i]})"
+            )
+
     if ensemble_linear:
         head = torch.nn.Linear(blocks_dims[-1], len(label_names)).to(device)
     else:
         head = PredictionHead(blocks_dims[-1], len(label_names), ftact).to(device)
 
     preds_scaled_list = []
-    for ckpt in args.checkpoints:
-        state = torch_load_trusted(ckpt, map_location=device)
-        if bool(state.get("linear_probe", False)) != ensemble_linear:
-            raise ValueError(
-                f"All checkpoints must share the same linear_probe flag (mismatch at {ckpt})"
-            )
+    for state in loaded_states:
         model.load_state_dict(autoencoder_state_dict(state))
         head.load_state_dict(prediction_head_state_dict(state))
         ps = predict_batches(
@@ -320,12 +325,7 @@ def main():
 
     X_off = _mask_xp_columns(X_test)
     preds_off_list = []
-    for ckpt in args.checkpoints:
-        state = torch_load_trusted(ckpt, map_location=device)
-        if bool(state.get("linear_probe", False)) != ensemble_linear:
-            raise ValueError(
-                f"All checkpoints must share the same linear_probe flag (mismatch at {ckpt})"
-            )
+    for state in loaded_states:
         model.load_state_dict(autoencoder_state_dict(state))
         head.load_state_dict(prediction_head_state_dict(state))
         preds_off_list.append(
@@ -462,8 +462,7 @@ def main():
                 calib_doc = json.load(f)
             preds_q_on = []
             preds_q_off = []
-            for ckpt in args.checkpoints:
-                state = torch_load_trusted(ckpt, map_location=device)
+            for state in loaded_states:
                 model.load_state_dict(autoencoder_state_dict(state))
                 head.load_state_dict(prediction_head_state_dict(state))
                 preds_q_on.append(
