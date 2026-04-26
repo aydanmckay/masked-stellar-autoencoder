@@ -1,10 +1,6 @@
 """Tests for quantile_loss and σ-weights (requires torch)."""
 
-import os
-import sys
-
 import pytest
-
 
 torch = pytest.importorskip("torch")
 

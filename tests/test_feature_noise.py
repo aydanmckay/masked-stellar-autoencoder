@@ -1,7 +1,3 @@
-import os
-import sys
-
-
 from masked_stellar_autoencoder.training.feature_noise import pert_channel_scale_vector
 
 

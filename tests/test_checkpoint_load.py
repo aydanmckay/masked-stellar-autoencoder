@@ -1,11 +1,7 @@
 """torch.load compatibility for training checkpoints (NumPy in dict, etc.)."""
 
-import os
-import sys
-
 import numpy as np
 import torch
-
 
 from masked_stellar_autoencoder.models.checkpoint_load import torch_load_trusted
 

@@ -1,5 +1,3 @@
-import re
-
 with open("src/masked_stellar_autoencoder/models/model.py", "r") as f:
     text = f.read()
 
@@ -39,7 +37,10 @@ class FinetuneContext:
 """
 
 if "class FinetuneContext:" not in text:
-    text = text.replace("class TabResnetWrapper(BaseEstimator):", context_class + "class TabResnetWrapper(BaseEstimator):")
+    text = text.replace(
+        "class TabResnetWrapper(BaseEstimator):",
+        context_class + "class TabResnetWrapper(BaseEstimator):",
+    )
 
 # Now I'll provide the helper methods that use FinetuneContext.
 helper_code = """

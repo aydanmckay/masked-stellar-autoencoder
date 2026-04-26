@@ -1,10 +1,6 @@
 """Pure dict logic for eval checkpoint loading."""
 
-import os
-import sys
-
 import pytest
-
 
 from masked_stellar_autoencoder.training.checkpoint_keys import (
     autoencoder_state_dict,

@@ -1,9 +1,5 @@
-import os
-import sys
-
 import numpy as np
 import pytest
-
 
 from masked_stellar_autoencoder.training.conformal import (  # noqa: E402
     apply_cqr_offsets_inplace,

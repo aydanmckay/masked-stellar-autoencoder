@@ -1,7 +1,3 @@
-import os
-import sys
-
-
 from masked_stellar_autoencoder.training.config_paths import (
     expand_config_paths,
     expand_path,

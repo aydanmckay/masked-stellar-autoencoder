@@ -7,7 +7,9 @@ helper_code = open("tmp_helpers.py").read()
 
 fit_val_regex = r"    def fit\([\s\S]*?        return val_loss \/ len\(val_loader\)"
 
-new_funcs = helper_code + """
+new_funcs = (
+    helper_code
+    + """
     def _check_linearprobe_compatibility(self, linearprobe, ftlf, multitask, rncloss):
         if linearprobe:
             if ftlf == "quantile":
@@ -280,6 +282,7 @@ new_funcs = helper_code + """
         print(f"Validation Loss: {val_loss / len(val_loader)}")
         return val_loss / len(val_loader)
 """
+)
 
 new_text = re.sub(fit_val_regex, new_funcs.strip("\n"), text)
 with open("src/masked_stellar_autoencoder/models/model.py", "w") as f:

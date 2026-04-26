@@ -1,8 +1,4 @@
-import os
-import sys
-
 import numpy as np
-
 
 from masked_stellar_autoencoder.training.astrometry_features import (
     apply_parallax_input_policy,

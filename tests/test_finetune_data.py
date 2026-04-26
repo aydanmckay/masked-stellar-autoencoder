@@ -1,10 +1,7 @@
-import os
-import sys
 from unittest.mock import MagicMock, patch
 
 import pandas as pd
 import pytest
-
 
 from masked_stellar_autoencoder.training.finetune_data import prepare_finetune_arrays
 

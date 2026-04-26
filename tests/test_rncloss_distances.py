@@ -1,8 +1,4 @@
-import os
-import sys
-
 import pytest
-
 
 torch = pytest.importorskip("torch")
 
