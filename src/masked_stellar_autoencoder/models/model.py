@@ -104,12 +104,6 @@ class MaskedMSELoss(nn.Module):
         mask = ~torch.isnan(target)
 
         # Compute squared error only where target is not NaN
-
-        # old way
-        # squared_error = (input - target)**2
-        # masked_error = squared_error[mask]
-
-        # new way
         masked_input = input[mask]
         masked_target = target[mask]
         masked_error = (masked_input - masked_target) ** 2

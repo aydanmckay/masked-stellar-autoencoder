@@ -32,7 +32,7 @@ platforms = ["osx-arm64", "linux-64"]
 [tool.pixi.tasks]
 lint = "ruff check ."
 format = "ruff format ."
-test = "pytest"
+test = "PYTHONPATH=src/masked_stellar_autoencoder:src/masked_stellar_autoencoder/data:src/masked_stellar_autoencoder/training:src/masked_stellar_autoencoder/utils pytest tests/"
 
 [tool.pixi.dependencies]
 python = "3.12.*"
