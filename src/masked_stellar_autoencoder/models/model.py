@@ -30,11 +30,9 @@ class MaskedGaussianNLLLoss(nn.Module):
         if isinstance(target_var, float):
             if target_var < 0:
                 raise ValueError("var has negative entry/entries")
-            # target_var = target_var * torch.ones_like(input)
         elif torch.any(target_var < 0):
             raise ValueError("var has negative entry/entries")
 
-        # mask = ~torch.isnan(target)
         mask = (~torch.isnan(target)) & (~torch.isnan(target_var))
 
         pred_mean = pred_mean[mask]
