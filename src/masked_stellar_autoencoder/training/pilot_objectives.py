@@ -18,14 +18,9 @@ Compare validation loss in the fine-tune log; record numbers in ``docs/EXPERIMEN
 
 import argparse
 import os
-import sys
 
 import numpy as np
 import yaml
-
-repo_root = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
-sys.path.insert(0, repo_root)
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from .config_paths import expand_config_paths
 from .finetune_data import prepare_finetune_arrays

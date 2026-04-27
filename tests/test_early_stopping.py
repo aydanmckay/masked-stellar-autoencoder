@@ -1,7 +1,8 @@
 from unittest.mock import MagicMock
 
 import pytest
-from models.model import EarlyStopping
+
+from masked_stellar_autoencoder.models.model import EarlyStopping
 
 torch = pytest.importorskip("torch")
 
@@ -76,7 +77,7 @@ def test_early_stopping_trigger(mocker):
 
 
 def test_early_stopping_save_checkpoint(mocker):
-    mock_save = mocker.patch("models.model.torch.save")
+    mock_save = mocker.patch("masked_stellar_autoencoder.models.model.torch.save")
     es = EarlyStopping(path="test_checkpoint.pth")
     model = MagicMock()
     model.state_dict.return_value = {"weight": 1}

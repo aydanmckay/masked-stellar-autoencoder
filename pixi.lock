@@ -4782,7 +4782,7 @@ packages:
 - pypi: ./
   name: masked-stellar-autoencoder
   version: 0.1.0
-  sha256: d55076158d0da52c36617d4bba1cad808c04c16d37a2308c11dba0b58fdf60ed
+  sha256: 2b226a346e8d3275655b6a928d90df7cf7d787c1709fb705d0e868abfcd30d6b
   requires_dist:
   - torch>=2.1.0
   - numpy>=1.25.0

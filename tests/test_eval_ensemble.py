@@ -1,17 +1,7 @@
-import os
-import sys
-
 import numpy as np
 import torch
 
-_training = os.path.abspath(
-    os.path.join(
-        os.path.dirname(__file__), "..", "src", "masked_stellar_autoencoder", "training"
-    )
-)
-sys.path.insert(0, _training)
-
-from eval_ensemble import predict_batches
+from masked_stellar_autoencoder.training.eval_ensemble import predict_batches
 
 
 class DummyModel(torch.nn.Module):

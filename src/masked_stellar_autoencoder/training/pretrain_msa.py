@@ -1,17 +1,11 @@
 import argparse
-import os
-import sys
 
 import h5py
 import numpy as np
 import yaml
 from sklearn.preprocessing import RobustScaler
 
-# Add the repo root to Python path
-repo_root = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
-sys.path.insert(0, repo_root)
-
-from models.model import TabResnetWrapper, make_model
+from masked_stellar_autoencoder.models.model import TabResnetWrapper, make_model
 
 from .config_paths import expand_config_paths
 from .feature_noise import pert_channel_scale_vector

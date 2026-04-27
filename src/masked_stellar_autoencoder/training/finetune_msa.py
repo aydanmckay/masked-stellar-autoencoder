@@ -1,18 +1,12 @@
 import argparse
-import os
 import random
-import sys
 
 import numpy as np
 import torch
 import yaml
 
-repo_root = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
-sys.path.insert(0, repo_root)
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-
-from models.checkpoint_load import torch_load_trusted
-from models.model import TabResnetWrapper, make_model
+from masked_stellar_autoencoder.models.checkpoint_load import torch_load_trusted
+from masked_stellar_autoencoder.models.model import TabResnetWrapper, make_model
 
 from .config_paths import expand_config_paths, ft_checkpoint_paths
 from .feature_noise import pert_channel_scale_vector

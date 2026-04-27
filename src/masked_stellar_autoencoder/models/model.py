@@ -3,6 +3,7 @@ import logging
 import math
 import os
 import random
+from dataclasses import dataclass
 from typing import Optional
 
 # import h5py
@@ -469,6 +470,34 @@ def _reduce_finetune_prediction(y_raw: Tensor, ftlf: str, linearprobe: bool):
 
 
 # creating a training wrapper for the algorithm
+@dataclass
+class FinetuneContext:
+    linearprobe: bool
+    maskft: bool
+    multitask: bool
+    ftlf: str
+    rncloss: bool
+    pert_features: bool
+    pert_labels: bool
+    parallax_use_masked_pred: bool
+    parallax_label_idx: Optional[int]
+    ft_use_sigma_quantile_weights: bool
+    ft_sigma_weight_floor: float
+    ft_sigma_weight_max: float
+    ft_sigma_weight_normalize_batch: bool
+    q_weight_t: Optional[torch.Tensor]
+    criterion: Optional[torch.nn.Module]
+    criterion2: Optional[torch.nn.Module]
+    rnc: Optional[torch.nn.Module]
+    parallax_mle_weight: float
+    m_consistency: Optional[torch.Tensor]
+    c_consistency: Optional[torch.Tensor]
+    parallax_sigma_scale: float
+    parallax_sigma_floor: float
+    ft_lambda_pred: float
+    ft_lambda_rec: float
+
+
 class TabResnetWrapper(BaseEstimator):
     def __init__(
         self,

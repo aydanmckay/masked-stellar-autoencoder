@@ -24,7 +24,6 @@ from __future__ import annotations
 import argparse
 import json
 import os
-import sys
 from typing import Any, Dict, Optional
 
 import numpy as np
@@ -32,12 +31,8 @@ import torch
 import yaml
 from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score
 
-repo_root = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
-sys.path.insert(0, repo_root)
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-
-from models.checkpoint_load import torch_load_trusted
-from models.model import PredictionHead, make_model
+from masked_stellar_autoencoder.models.checkpoint_load import torch_load_trusted
+from masked_stellar_autoencoder.models.model import PredictionHead, make_model
 
 from .checkpoint_keys import autoencoder_state_dict, prediction_head_state_dict
 from .config_paths import expand_config_paths

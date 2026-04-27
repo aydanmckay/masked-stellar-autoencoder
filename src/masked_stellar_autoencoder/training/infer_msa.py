@@ -22,7 +22,6 @@ from __future__ import annotations
 import argparse
 import json
 import os
-import sys
 
 import h5py
 import numpy as np
@@ -30,17 +29,16 @@ import pandas as pd
 import torch
 import yaml
 
-repo_root = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
-sys.path.insert(0, repo_root)
-
-from models.checkpoint_load import torch_load_trusted
-from models.model import PredictionHead, make_model
-
-from training.checkpoint_keys import autoencoder_state_dict, prediction_head_state_dict
-from training.config_paths import expand_config_paths
-from training.conformal import apply_cqr_offsets_inplace
-from training.eval_ensemble import _inverse_quantile_block
-from training.finetune_data import prepare_finetune_arrays
+from masked_stellar_autoencoder.models.checkpoint_load import torch_load_trusted
+from masked_stellar_autoencoder.models.model import PredictionHead, make_model
+from masked_stellar_autoencoder.training.checkpoint_keys import (
+    autoencoder_state_dict,
+    prediction_head_state_dict,
+)
+from masked_stellar_autoencoder.training.config_paths import expand_config_paths
+from masked_stellar_autoencoder.training.conformal import apply_cqr_offsets_inplace
+from masked_stellar_autoencoder.training.eval_ensemble import _inverse_quantile_block
+from masked_stellar_autoencoder.training.finetune_data import prepare_finetune_arrays
 
 
 @torch.no_grad()
