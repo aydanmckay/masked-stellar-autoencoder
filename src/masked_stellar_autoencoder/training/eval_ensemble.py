@@ -295,6 +295,7 @@ def main():
         ftact = torch.nn.ELU()
     else:
         ftact = torch.nn.GELU()
+
     loaded_states = []
     for ckpt in args.checkpoints:
         state = torch_load_trusted(ckpt, map_location="cpu")
