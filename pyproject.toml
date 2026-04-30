@@ -33,8 +33,9 @@ platforms = ["osx-arm64", "linux-64"]
 lint = "ruff check ."
 format = "ruff format ."
 test = "PYTHONPATH=src:. pytest tests/"
-# Same sequence as .github/workflows/ci.yml — run before git push (pre-push hook uses this).
-ci = "pre-commit run --all-files --color always && PYTHONPATH=src:. pytest tests/"
+# Same sequence as .github/workflows/ci.yml (pre-push hook + Actions). Inner
+# `pre-commit run` skips `ci-tests` so pytest is not run twice (that hook runs on commit).
+ci = "SKIP=ci-tests pre-commit run --all-files --color always && PYTHONPATH=src:. pytest tests/"
 
 [tool.pixi.dependencies]
 python = "3.12.*"

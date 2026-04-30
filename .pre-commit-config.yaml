@@ -37,10 +37,21 @@ repos:
 
   - repo: local
     hooks:
-      - id: ci-parity
-        name: CI parity (pixi run ci)
-        entry: pixi run ci
+      # Commit: lint/format/codespell above, then tests (full `pixi run ci` is pre-push only
+      # so nested `pre-commit run` inside `ci` never loops).
+      - id: ci-tests
+        name: CI tests (pixi run --frozen test)
+        entry: pixi run --frozen test
         language: system
         pass_filenames: false
         always_run: true
+        require_serial: true
+        stages: [pre-commit]
+      - id: ci-parity
+        name: CI parity (pixi run --frozen ci)
+        entry: pixi run --frozen ci
+        language: system
+        pass_filenames: false
+        always_run: true
+        require_serial: true
         stages: [pre-push]

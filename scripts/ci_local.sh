@@ -7,4 +7,4 @@ if ! command -v pixi >/dev/null 2>&1; then
   echo "error: pixi is not on PATH (install from https://pixi.sh)" >&2
   exit 1
 fi
-exec pixi run ci
+exec pixi run --frozen ci
