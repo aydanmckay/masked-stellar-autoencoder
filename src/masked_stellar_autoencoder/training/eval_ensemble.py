@@ -291,21 +291,23 @@ def main():
         ftact = torch.nn.ELU()
     else:
         ftact = torch.nn.GELU()
-    probe0 = torch_load_trusted(args.checkpoints[0], map_location=device)
-    ensemble_linear = bool(probe0.get("linear_probe", False))
-    if ensemble_linear:
-        head = torch.nn.Linear(blocks_dims[-1], len(label_names)).to(device)
-    else:
-        head = PredictionHead(blocks_dims[-1], len(label_names), ftact).to(device)
 
     loaded_states = []
     for ckpt in args.checkpoints:
         state = torch_load_trusted(ckpt, map_location="cpu")
+        loaded_states.append(state)
+
+    ensemble_linear = bool(loaded_states[0].get("linear_probe", False))
+    for i, state in enumerate(loaded_states):
         if bool(state.get("linear_probe", False)) != ensemble_linear:
             raise ValueError(
-                f"All checkpoints must share the same linear_probe flag (mismatch at {ckpt})"
+                f"All checkpoints must share the same linear_probe flag (mismatch at {args.checkpoints[i]})"
             )
-        loaded_states.append(state)
+
+    if ensemble_linear:
+        head = torch.nn.Linear(blocks_dims[-1], len(label_names)).to(device)
+    else:
+        head = PredictionHead(blocks_dims[-1], len(label_names), ftact).to(device)
 
     preds_scaled_list = []
     for state in loaded_states:
