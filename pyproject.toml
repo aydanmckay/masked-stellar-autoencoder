@@ -33,7 +33,9 @@ platforms = ["osx-arm64", "linux-64"]
 lint = "ruff check ."
 format = "ruff format ."
 test = "PYTHONPATH=src:. pytest tests/"
-# Same sequence as .github/workflows/ci.yml (pre-push hook + Actions). Inner
+# Fast gate: hooks only (pytest is separate via `ci-tests` skip — see pre-commit config).
+ci-precommit = "SKIP=ci-tests pre-commit run --all-files --color always"
+# Same sequence as .github/workflows CI test job + pre-commit parity. Inner
 # `pre-commit run` skips `ci-tests` so pytest is not run twice (that hook runs on commit).
 ci = "SKIP=ci-tests pre-commit run --all-files --color always && PYTHONPATH=src:. pytest tests/"
 

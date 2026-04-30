@@ -6,8 +6,24 @@ on:
   pull_request:
     branches: [main]
 
+# Cheap pre-commit first so trivial lint/format/ruff issues never start a Pixi + pytest job.
 jobs:
-  lint-test:
+  pre-commit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install pre-commit
+        run: pip install "pre-commit>=4,<5"
+      - name: Run pre-commit (all files)
+        env:
+          SKIP: ci-tests
+        run: pre-commit run --all-files --show-diff-on-failure --color always
+
+  test:
+    needs: pre-commit
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -16,6 +32,7 @@ jobs:
       - uses: prefix-dev/setup-pixi@v0.8.0
         with:
           pixi-version: latest
-
-      - name: CI gate (pre-commit all-files + tests)
-        run: bash scripts/ci_local.sh
+      - name: Install (frozen)
+        run: pixi install --frozen
+      - name: Test
+        run: pixi run --frozen test
