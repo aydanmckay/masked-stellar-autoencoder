@@ -17,8 +17,5 @@ jobs:
         with:
           pixi-version: latest
 
-      - name: Run pre-commit
-        uses: pre-commit/action@v3.0.1
-
-      - name: Test
-        run: pixi run test
+      - name: CI gate (pre-commit all-files + tests)
+        run: bash scripts/ci_local.sh
