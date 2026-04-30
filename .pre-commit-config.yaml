@@ -31,4 +31,4 @@ repos:
     hooks:
       - id: codespell
         additional_dependencies: [tomli]
-        args: ["--ignore-words-list", "nd,th,te,mape,ot,aci,fpr,ois,aussian,numer,commun,multline,als,activ,strat,oen,suh,vas,mye,fo,hte,ue,nax,ags,bu,acn,vew,ecept,ure,ege,edn,whe,inh,ths,proceedure,eazy,clen,acess,astroid,degress,som,sompz,slac,ges,recal,litterature"]
+        args: ["--ignore-words-list", "nd,th,te,mape,ot,aci,fpr,ois,aussian,numer,commun,multline,als,activ,strat,oen,suh,vas,mye,fo,hte,ue,nax,ags,bu,acn,vew,ecept,ure,ege,edn,whe,inh,ths,proceedure,eazy,clen,acess,astroid,degress,som,sompz,slac,ges,recal,litterature,wee,sme,vai,wit,noo,tru,ofo,tne,wel,egde,meu,onl,nwe,tey,coo,hel,fwe,fpt,wrte,nce"]
