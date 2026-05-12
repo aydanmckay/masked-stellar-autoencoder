@@ -217,17 +217,11 @@ class RnCLoss(nn.Module):
         exp_logits = exp_logits[mask].view(n, n - 1)
         label_diffs = label_diffs[mask].view(n, n - 1)
 
-        loss = 0.0
-        for k in range(n - 1):
-            pos_logits = logits[:, k]  # 2bs
-            pos_label_diffs = label_diffs[:, k]  # 2bs
-            neg_mask = (
-                label_diffs >= pos_label_diffs.view(-1, 1)
-            ).float()  # [2bs, 2bs - 1]
-            pos_log_probs = pos_logits - torch.log(
-                (neg_mask * exp_logits).sum(dim=-1)
-            )  # 2bs
-            loss += -(pos_log_probs / (n * (n - 1))).sum()
+        # ⚡ Bolt: Vectorize operations using `.unsqueeze()` to eliminate the Python loop and achieve O(1) execution time.
+        neg_mask = (label_diffs.unsqueeze(1) >= label_diffs.unsqueeze(2)).float()
+        log_sum_exp = torch.log((neg_mask * exp_logits.unsqueeze(1)).sum(dim=-1))
+        pos_log_probs = logits - log_sum_exp
+        loss = -(pos_log_probs / (n * (n - 1))).sum()
 
         return loss
 
