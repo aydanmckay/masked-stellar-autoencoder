@@ -1,10 +1,11 @@
-import torch
 import pytest
+import torch
+
 from masked_stellar_autoencoder.models.model import (
     MaskedGaussianNLLLoss,
-    WeightedMaskedMSELoss,
-    MaskedMSELoss,
     MaskedMAELoss,
+    MaskedMSELoss,
+    WeightedMaskedMSELoss,
 )
 
 
