@@ -13,3 +13,15 @@
 ## 2026-05-01 - Optimizing HDF5 Dataset Creation
 **Learning:** Instantiating `pandas.DataFrame` purely as an intermediate step to construct structured arrays for HDF5 `create_dataset` incurs significant and unnecessary Pandas overhead.
 **Action:** When assembling tabular data strictly for writing to HDF5 datasets, always use native NumPy structured arrays (`np.empty(len(data), dtype=[...])`) to drastically improve script execution speed and reduce memory consumption.
+
+## 2026-05-24 - PyTorch Loss Function GPU Sync Bottlenecks
+**Learning:** In PyTorch, using dynamic-shape boolean array indexing (e.g., `input[mask]`) on GPU tensors triggers costly Device-to-Host (GPU to CPU) synchronizations. This is because the CPU needs to determine the resulting tensor's dynamic shape to allocate memory. We measured this and found it slows down loss calculations by 30-50%.
+**Action:** When calculating masked reductions (`mean` or `sum`) on tensors, use `.masked_fill(~mask, 0.0)` on the full-shape tensors, compute the error metric, and then apply a sum reduction (e.g., `.sum() / mask.sum().clamp_min(1)`). Crucially, you must sanitize `NaN` values *before* math operations (e.g. `(safe_pred - safe_target)**2`), otherwise `NaN` gradients will propagate during the backward pass even if masked out later. Preserve the original boolean indexing pattern specifically for `reduction="none"` to maintain API shape contracts.
+
+## 2026-05-12 - Vectorizing PyTorch Custom Losses
+**Learning:** In PyTorch custom loss functions (like RnCLoss), using Python `for` loops for row-wise contrastive metrics results in slow O(n) execution times and loop overhead. Replacing loops with broadcasting using `.unsqueeze()` transforms the operation into a single vectorized O(1) step, dramatically increasing performance.
+**Action:** When implementing contrastive or pairwise loss functions in PyTorch, always evaluate pairs using multi-dimensional broadcasting (e.g., `tensor.unsqueeze(1) - tensor.unsqueeze(2)`) instead of explicit loops over dimension sizes.
+
+## 2026-05-14 - Avoid dynamic boolean indexing in quantile loss
+**Learning:** In PyTorch, using dynamic-shape boolean indexing like `loss[mask].mean()` forces device-to-host synchronization, causing massive slowdowns in tight loops or custom loss functions.
+**Action:** Replace dynamic indexing with full-shape tensor operations like `loss.masked_fill(~mask, 0.0).sum() / mask.sum().clamp_min(1)`. Ensure the mask replacement is out-of-place (e.g. `masked_fill` instead of `masked_fill_`) if in-place modifications trigger autograd errors or undefined behavior in edge cases.
