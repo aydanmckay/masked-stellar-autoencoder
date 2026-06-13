@@ -4,7 +4,6 @@ import math
 import os
 import random
 from dataclasses import dataclass
-from typing import Optional
 
 import numpy as np
 import torch
@@ -177,7 +176,7 @@ class LabelDifference(nn.Module):
     """
 
     def __init__(self, distance_type="l1"):
-        super(LabelDifference, self).__init__()
+        super().__init__()
         self.distance_type = distance_type
 
     def forward(self, labels):
@@ -200,7 +199,7 @@ class FeatureSimilarity(nn.Module):
     """
 
     def __init__(self, similarity_type="l2"):
-        super(FeatureSimilarity, self).__init__()
+        super().__init__()
         self.similarity_type = similarity_type
 
     def forward(self, features):
@@ -223,7 +222,7 @@ class RnCLoss(nn.Module):
     """
 
     def __init__(self, temperature=2, label_diff="l1", feature_sim="l2"):
-        super(RnCLoss, self).__init__()
+        super().__init__()
         self.t = temperature
         self.label_diff_fn = LabelDifference(label_diff)
         self.feature_sim_fn = FeatureSimilarity(feature_sim)
@@ -319,7 +318,7 @@ class EncoderDecoderLoss(nn.Module):
     """
 
     def __init__(self, eps: float = 1e-9, lf="mse"):
-        super(EncoderDecoderLoss, self).__init__()
+        super().__init__()
         self.eps = eps
         self.cost = lf
 
@@ -378,7 +377,7 @@ class EncoderDecoderLoss(nn.Module):
 
 class PredictionHead(nn.Module):
     def __init__(self, latent_size, ft_label_dim, ft_activ):
-        super(PredictionHead, self).__init__()
+        super().__init__()
 
         self.shared = nn.Sequential(
             nn.Linear(latent_size, 2048),
@@ -415,8 +414,8 @@ def quantile_loss(
     preds: torch.Tensor,
     target: torch.Tensor,
     quantiles: torch.Tensor,
-    label_weights: Optional[Tensor] = None,
-    sample_weight: Optional[Tensor] = None,
+    label_weights: Tensor | None = None,
+    sample_weight: Tensor | None = None,
 ) -> torch.Tensor:
     """
     Pinball / quantile loss. Optionally up-weight rare labels (e.g. [Fe/H]) so
@@ -483,7 +482,7 @@ def _reduce_finetune_prediction(y_raw: Tensor, ftlf: str, linearprobe: bool):
         return y_raw, None
     if isinstance(y_raw, Tensor) and y_raw.dim() == 3:
         return y_raw[..., 1], None
-    if isinstance(y_raw, (tuple, list)) and len(y_raw) >= 2:
+    if isinstance(y_raw, tuple | list) and len(y_raw) >= 2:
         return y_raw[0], y_raw[1]
     return y_raw, None
 
@@ -499,18 +498,18 @@ class FinetuneContext:
     pert_features: bool
     pert_labels: bool
     parallax_use_masked_pred: bool
-    parallax_label_idx: Optional[int]
+    parallax_label_idx: int | None
     ft_use_sigma_quantile_weights: bool
     ft_sigma_weight_floor: float
     ft_sigma_weight_max: float
     ft_sigma_weight_normalize_batch: bool
-    q_weight_t: Optional[torch.Tensor]
-    criterion: Optional[torch.nn.Module]
-    criterion2: Optional[torch.nn.Module]
-    rnc: Optional[torch.nn.Module]
+    q_weight_t: torch.Tensor | None
+    criterion: torch.nn.Module | None
+    criterion2: torch.nn.Module | None
+    rnc: torch.nn.Module | None
     parallax_mle_weight: float
-    m_consistency: Optional[torch.Tensor]
-    c_consistency: Optional[torch.Tensor]
+    m_consistency: torch.Tensor | None
+    c_consistency: torch.Tensor | None
     parallax_sigma_scale: float
     parallax_sigma_floor: float
     ft_lambda_pred: float
@@ -518,6 +517,33 @@ class FinetuneContext:
 
 
 class TabResnetWrapper(BaseEstimator):
+    @staticmethod
+    def _open_datafile(datafile):
+        if hasattr(datafile, "keys"):
+            return datafile
+        if isinstance(datafile, str):
+            import h5py
+
+            try:
+                return h5py.File(datafile, "r")
+            except Exception as e:
+                raise ValueError(f"Could not open datafile '{datafile}': {e}") from e
+        raise ValueError("datafile must be an open HDF5 file or file path")
+
+    @staticmethod
+    def _pert_channel_scale_array(
+        feature_cols, pert_channel_scale: np.ndarray | None
+    ) -> np.ndarray:
+        nfeat = len(feature_cols)
+        if pert_channel_scale is None:
+            return np.ones(nfeat, dtype=np.float32)
+        pc = np.asarray(pert_channel_scale, dtype=np.float32).reshape(-1)
+        if pc.shape[0] != nfeat:
+            raise ValueError(
+                f"pert_channel_scale length {pc.shape[0]} != len(feature_cols)={nfeat}"
+            )
+        return pc
+
     def __init__(
         self,
         model,
@@ -543,7 +569,7 @@ class TabResnetWrapper(BaseEstimator):
         pert_features=False,
         pert_scale=1.0,
         mask_mixture_xp_full_frac: float = 0.0,
-        pert_channel_scale: Optional[np.ndarray] = None,
+        pert_channel_scale: np.ndarray | None = None,
         scheduler_cosine_t0: int = 10,
         scheduler_cosine_t_mult: int = 2,
         scheduler_eta_min_factor: float = 0.01,
@@ -558,19 +584,7 @@ class TabResnetWrapper(BaseEstimator):
 
         """
         self.model = model
-        # Validate and handle datafile
-        if hasattr(datafile, "keys"):
-            self.datafile = datafile
-        elif isinstance(datafile, str):
-            try:
-                import h5py
-
-                self.datafile = h5py.File(datafile, "r")
-            except Exception as e:
-                raise ValueError(f"Could not open datafile '{datafile}': {e}")
-        else:
-            raise ValueError("datafile must be an open HDF5 file or file path")
-
+        self.datafile = self._open_datafile(datafile)
         self.featurescaler = scaler
         self.label_scalers = label_scalers
         if (
@@ -610,18 +624,11 @@ class TabResnetWrapper(BaseEstimator):
         self.scheduler_eta_min_factor = float(scheduler_eta_min_factor)
         self.pert_features = pert_features
         self.pert_scale = pert_scale
-        nfeat = len(feature_cols)
-        if pert_channel_scale is None:
-            self._pert_channel_scale_np = np.ones(nfeat, dtype=np.float32)
-        else:
-            pc = np.asarray(pert_channel_scale, dtype=np.float32).reshape(-1)
-            if pc.shape[0] != nfeat:
-                raise ValueError(
-                    f"pert_channel_scale length {pc.shape[0]} != len(feature_cols)={nfeat}"
-                )
-            self._pert_channel_scale_np = pc
-        self.lp: Optional[nn.Linear] = None
-        self.ft: Optional[PredictionHead] = None
+        self._pert_channel_scale_np = self._pert_channel_scale_array(
+            feature_cols, pert_channel_scale
+        )
+        self.lp: nn.Linear | None = None
+        self.ft: PredictionHead | None = None
 
         try:
             self.parallax_feature_idx = feature_cols.index("PARALLAX")
@@ -777,7 +784,7 @@ class TabResnetWrapper(BaseEstimator):
             raise ValueError(f"Error processing column {col}: {e}")
 
     def init_weights_gelu(self, m):
-        if isinstance(m, (nn.Linear, nn.Conv2d)):
+        if isinstance(m, nn.Linear | nn.Conv2d):
             nn.init.xavier_normal_(m.weight)
             if m.bias is not None:
                 nn.init.constant_(m.bias, 0)
@@ -1455,21 +1462,21 @@ class TabResnetWrapper(BaseEstimator):
         ensemblepath=None,
         ft_lambda_pred=0.8,
         ft_lambda_rec=0.2,
-        ft_quantile_label_weights: Optional[list] = None,
+        ft_quantile_label_weights: list | None = None,
         ft_use_sigma_quantile_weights: bool = False,
         ft_sigma_weight_floor: float = 1e-6,
         ft_sigma_weight_max: float = 1e6,
         ft_sigma_weight_normalize_batch: bool = True,
-        ft_encoder_lr: Optional[float] = None,
+        ft_encoder_lr: float | None = None,
         ft_scheduler_encoder_decay: float = 0.95,
         ft_scheduler_head_decay: float = 0.5,
         ft_scheduler_head_step_epochs: int = 10,
         parallax_mle_weight: float = 0.0,
         parallax_use_masked_pred: bool = False,
-        parallax_label_idx: Optional[int] = None,
+        parallax_label_idx: int | None = None,
         parallax_sigma_floor: float = 0.0,
         parallax_sigma_scale: float = 1.0,
-        consistency_params: Optional[dict] = None,
+        consistency_params: dict | None = None,
     ):
         X_train = torch.Tensor(X_train).to(self.device)
         eX_train = torch.Tensor(eX_train).to(self.device)
@@ -1630,17 +1637,17 @@ class TabResnetWrapper(BaseEstimator):
         ftlabeldim=5,
         ft_lambda_pred=0.8,
         ft_lambda_rec=0.2,
-        ft_quantile_label_weights: Optional[list] = None,
+        ft_quantile_label_weights: list | None = None,
         ft_use_sigma_quantile_weights: bool = False,
         ft_sigma_weight_floor: float = 1e-6,
         ft_sigma_weight_max: float = 1e6,
         ft_sigma_weight_normalize_batch: bool = True,
         parallax_mle_weight: float = 0.0,
         parallax_use_masked_pred: bool = False,
-        parallax_label_idx: Optional[int] = None,
+        parallax_label_idx: int | None = None,
         parallax_sigma_floor: float = 0.0,
         parallax_sigma_scale: float = 1.0,
-        consistency_params: Optional[dict] = None,
+        consistency_params: dict | None = None,
     ):
         self.model.eval()
         if linearprobe:

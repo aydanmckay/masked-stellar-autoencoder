@@ -13,7 +13,7 @@ class ResBlock(nn.Module):
     def __init__(
         self, in_features, out_features, dropout_prob=0.1, active="elu", norm="batch"
     ):
-        super(ResBlock, self).__init__()
+        super().__init__()
         self.lin1 = nn.Linear(in_features, out_features, bias=False)
         if norm == "batch":
             self.normal = nn.BatchNorm1d(out_features)
@@ -80,7 +80,7 @@ class DenseResnet(nn.Module):
         active="elu",
         norm="batch",
     ):
-        super(DenseResnet, self).__init__()
+        super().__init__()
 
         # creates the network using the blocks defined in the class ResBlock and the input dimensions
         layers = []
@@ -98,7 +98,6 @@ class DenseResnet(nn.Module):
                 else:
                     layers.append(ResBlock(input_dim, dim, active=active, norm=norm))
             else:
-                # input_dim_for_block = blocks_dims[i-1] if _ == 0 else dim
                 for j in range(num_blocks_per_layer):
                     if j == 0:
                         layers.append(
@@ -128,7 +127,7 @@ class TabResnetEncoder(nn.Module):
         active="elu",
         norm="batch",
     ):
-        super(TabResnetEncoder, self).__init__()
+        super().__init__()
 
         input_dim = continuous_cols  # Length of the data, e.g., 153
         self.encoder = DenseResnet(
@@ -155,7 +154,7 @@ class TabResnet(nn.Module):
         norm="batch",
         decoder_dims=None,
     ):
-        super(TabResnet, self).__init__()
+        super().__init__()
 
         self.encoder = TabResnetEncoder(
             continuous_cols=continuous_cols,
@@ -191,5 +190,4 @@ class TabResnet(nn.Module):
         decoded = self.decoder(encoded)
         out = self.reconstruction_layer(decoded)
 
-        # return probe_out, out
         return out, encoded

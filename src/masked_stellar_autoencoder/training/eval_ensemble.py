@@ -19,12 +19,10 @@ Encoder weights may be stored as ``autoencoder_state_dict`` (fine-tune) or
 for evaluation.
 """
 
-from __future__ import annotations
-
 import argparse
 import json
 import os
-from typing import Any, Dict, Optional
+from typing import Any
 
 import numpy as np
 import torch
@@ -41,7 +39,7 @@ from .finetune_data import prepare_finetune_arrays
 
 
 def _inverse_labels(
-    y_scaled: np.ndarray, scalers, pack: Optional[Dict[str, Any]] = None
+    y_scaled: np.ndarray, scalers, pack: dict[str, Any] | None = None
 ) -> np.ndarray:
     """y_scaled: (N, 6) in training label space; inverse to physical units for metrics."""
     out = np.zeros_like(y_scaled, dtype=np.float64)
@@ -60,7 +58,7 @@ def _inverse_labels(
 
 
 def _inverse_quantile_block(
-    y_q: np.ndarray, scalers, pack: Optional[Dict[str, Any]] = None
+    y_q: np.ndarray, scalers, pack: dict[str, Any] | None = None
 ) -> np.ndarray:
     """Map (N, L, 3) scaled quantiles to physical units (same rules as ``_inverse_labels``)."""
     y_q = np.asarray(y_q, dtype=np.float64)
@@ -94,7 +92,7 @@ def _nmad(residuals: np.ndarray) -> float:
 
 
 def _quartile_bin_metrics(
-    aux: Optional[np.ndarray],
+    aux: np.ndarray | None,
     y_true: np.ndarray,
     y_pred: np.ndarray,
     names: list,
@@ -168,7 +166,14 @@ def _mask_xp_columns(x: np.ndarray, xp_lo: int = 5, xp_hi: int = 115) -> np.ndar
     return out
 
 
-@torch.no_grad()
+def _feature_batch_tensor(chunk: np.ndarray, device: torch.device) -> torch.Tensor:
+    """Contiguous float32 batch on device with NaN sentinel for the encoder."""
+    arr = np.ascontiguousarray(chunk, dtype=np.float32)
+    xb = torch.from_numpy(arr).to(device, non_blocking=device.type == "cuda")
+    return torch.nan_to_num(xb, nan=-9999.0)
+
+
+@torch.inference_mode()
 def predict_batches(
     model,
     head,
@@ -183,8 +188,7 @@ def predict_batches(
     head.eval()
     outs = []
     for i in range(0, len(X), batch_size):
-        xb = torch.tensor(X[i : i + batch_size], dtype=torch.float32, device=device)
-        xb = torch.nan_to_num(xb, nan=-9999.0)
+        xb = _feature_batch_tensor(X[i : i + batch_size], device)
         z = model.encoder(xb)
         if linear_probe:
             med = head(z).cpu().numpy()
@@ -195,6 +199,61 @@ def predict_batches(
                 q.cpu().numpy() if return_full_quantiles else q[:, :, 1].cpu().numpy()
             )
     return np.concatenate(outs, axis=0)
+
+
+def _bins_true_parallax_quartiles(
+    y_t: np.ndarray,
+    y_p: np.ndarray,
+    label_names: list,
+    prefix: str,
+) -> dict:
+    """Binned metrics vs spectroscopic truth parallax (mas) quartiles on the test set."""
+    i = label_names.index("parallax")
+    pi = y_t[:, i]
+    fin = np.isfinite(pi) & (pi > 0)
+    if fin.sum() < 20:
+        return {}
+    qs = np.quantile(pi[fin], [0.25, 0.5, 0.75])
+    edges = [(-np.inf, qs[0]), (qs[0], qs[1]), (qs[1], qs[2]), (qs[2], np.inf)]
+    tag_names = ["pi_q0_25", "pi_q25_50", "pi_q50_75", "pi_q75_100"]
+    block: dict = {}
+    for (lo, hi), tag in zip(edges, tag_names, strict=False):
+        m = (pi > lo) & (pi <= hi) & fin
+        key = f"{prefix}_{tag}"
+        if m.sum() < 5:
+            block[key] = {"n": int(m.sum())}
+        else:
+            block[key] = _metrics_block(y_t[m], y_p[m], label_names)
+    return block
+
+
+def _ensemble_median_predictions(
+    model,
+    head,
+    loaded_states: list,
+    X: np.ndarray,
+    device: torch.device,
+    batch_size: int,
+    *,
+    linear_probe: bool,
+    return_full_quantiles: bool = False,
+) -> np.ndarray:
+    preds = []
+    for state in loaded_states:
+        model.load_state_dict(autoencoder_state_dict(state))
+        head.load_state_dict(prediction_head_state_dict(state))
+        preds.append(
+            predict_batches(
+                model,
+                head,
+                X,
+                device,
+                batch_size,
+                linear_probe=linear_probe,
+                return_full_quantiles=return_full_quantiles,
+            )
+        )
+    return np.median(np.stack(preds, axis=0), axis=0)
 
 
 def write_latex_metrics_table(rows_xp_on: dict, rows_xp_off: dict, path: str) -> None:
@@ -218,20 +277,11 @@ def write_latex_metrics_table(rows_xp_on: dict, rows_xp_off: dict, path: str) ->
             v = d.get(k)
             return "—" if v is None else f"{v:.4g}"
 
+        name_latex = name.replace("_", "\\_")
         lines.append(
-            "        {%s} & %s & %s & %s & %s & %s & %s & %s & %s & %s \\\\"
-            % (
-                name.replace("_", "\\_"),
-                u,
-                fmt(a, "RMSE"),
-                fmt(a, "MAE"),
-                fmt(a, "R2"),
-                fmt(a, "NMAD"),
-                fmt(b, "RMSE"),
-                fmt(b, "MAE"),
-                fmt(b, "R2"),
-                fmt(b, "NMAD"),
-            )
+            f"        {{{name_latex}}} & {u} & {fmt(a, 'RMSE')} & {fmt(a, 'MAE')} & "
+            f"{fmt(a, 'R2')} & {fmt(a, 'NMAD')} & {fmt(b, 'RMSE')} & {fmt(b, 'MAE')} & "
+            f"{fmt(b, 'R2')} & {fmt(b, 'NMAD')} \\\\"
         )
     lines += [r"        \bottomrule", r"    \end{tabular}", r"\end{table*}"]
     os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
@@ -309,33 +359,27 @@ def main():
     else:
         head = PredictionHead(blocks_dims[-1], len(label_names), ftact).to(device)
 
-    preds_scaled_list = []
-    for state in loaded_states:
-        model.load_state_dict(autoencoder_state_dict(state))
-        head.load_state_dict(prediction_head_state_dict(state))
-        ps = predict_batches(
-            model, head, X_test, device, args.batch_size, linear_probe=ensemble_linear
-        )
-        preds_scaled_list.append(ps)
-    ens_med = np.median(np.stack(preds_scaled_list, axis=0), axis=0)
+    ens_med = _ensemble_median_predictions(
+        model,
+        head,
+        loaded_states,
+        X_test,
+        device,
+        args.batch_size,
+        linear_probe=ensemble_linear,
+    )
     y_pred_phys = _inverse_labels(ens_med, scalers, pack)
 
     X_off = _mask_xp_columns(X_test)
-    preds_off_list = []
-    for state in loaded_states:
-        model.load_state_dict(autoencoder_state_dict(state))
-        head.load_state_dict(prediction_head_state_dict(state))
-        preds_off_list.append(
-            predict_batches(
-                model,
-                head,
-                X_off,
-                device,
-                args.batch_size,
-                linear_probe=ensemble_linear,
-            )
-        )
-    ens_med_off = np.median(np.stack(preds_off_list, axis=0), axis=0)
+    ens_med_off = _ensemble_median_predictions(
+        model,
+        head,
+        loaded_states,
+        X_off,
+        device,
+        args.batch_size,
+        linear_probe=ensemble_linear,
+    )
     y_pred_off_phys = _inverse_labels(ens_med_off, scalers, pack)
 
     out = {
@@ -363,33 +407,11 @@ def main():
             y_phys[m], y_pred_off_phys[m], label_names
         )
 
-    def _bins_true_parallax_quartiles(
-        y_t: np.ndarray, y_p: np.ndarray, prefix: str
-    ) -> dict:
-        """Binned metrics vs spectroscopic truth parallax (mas) quartiles on the test set."""
-        i = label_names.index("parallax")
-        pi = y_t[:, i]
-        fin = np.isfinite(pi) & (pi > 0)
-        if fin.sum() < 20:
-            return {}
-        qs = np.quantile(pi[fin], [0.25, 0.5, 0.75])
-        edges = [(-np.inf, qs[0]), (qs[0], qs[1]), (qs[1], qs[2]), (qs[2], np.inf)]
-        tag_names = ["pi_q0_25", "pi_q25_50", "pi_q50_75", "pi_q75_100"]
-        block: dict = {}
-        for (lo, hi), tag in zip(edges, tag_names, strict=False):
-            m = (pi > lo) & (pi <= hi) & fin
-            key = f"{prefix}_{tag}"
-            if m.sum() < 5:
-                block[key] = {"n": int(m.sum())}
-            else:
-                block[key] = _metrics_block(y_t[m], y_p[m], label_names)
-        return block
-
     out["bins_parallax_truth_xp_on"] = _bins_true_parallax_quartiles(
-        y_phys, y_pred_phys, "xp_on"
+        y_phys, y_pred_phys, label_names, "xp_on"
     )
     out["bins_parallax_truth_xp_off"] = _bins_true_parallax_quartiles(
-        y_phys, y_pred_off_phys, "xp_off"
+        y_phys, y_pred_off_phys, label_names, "xp_off"
     )
 
     g_aux = pack.get("test_G_mag")
@@ -457,35 +479,26 @@ def main():
         else:
             with open(args.conformal_json) as f:
                 calib_doc = json.load(f)
-            preds_q_on = []
-            preds_q_off = []
-            for state in loaded_states:
-                model.load_state_dict(autoencoder_state_dict(state))
-                head.load_state_dict(prediction_head_state_dict(state))
-                preds_q_on.append(
-                    predict_batches(
-                        model,
-                        head,
-                        X_test,
-                        device,
-                        args.batch_size,
-                        linear_probe=False,
-                        return_full_quantiles=True,
-                    )
-                )
-                preds_q_off.append(
-                    predict_batches(
-                        model,
-                        head,
-                        X_off,
-                        device,
-                        args.batch_size,
-                        linear_probe=False,
-                        return_full_quantiles=True,
-                    )
-                )
-            ens_q_on = np.median(np.stack(preds_q_on, axis=0), axis=0)
-            ens_q_off = np.median(np.stack(preds_q_off, axis=0), axis=0)
+            ens_q_on = _ensemble_median_predictions(
+                model,
+                head,
+                loaded_states,
+                X_test,
+                device,
+                args.batch_size,
+                linear_probe=False,
+                return_full_quantiles=True,
+            )
+            ens_q_off = _ensemble_median_predictions(
+                model,
+                head,
+                loaded_states,
+                X_off,
+                device,
+                args.batch_size,
+                linear_probe=False,
+                return_full_quantiles=True,
+            )
             apply_cqr_offsets_inplace(ens_q_on, calib_doc)
             apply_cqr_offsets_inplace(ens_q_off, calib_doc)
             phys_on = _inverse_quantile_block(ens_q_on, scalers, pack)

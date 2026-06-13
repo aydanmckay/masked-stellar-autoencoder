@@ -6,8 +6,6 @@ derived quantity (e.g. parallax signal-to-noise) so the encoder is not fed the
 same real-valued quantity as the supervised parallax target without structure.
 """
 
-from __future__ import annotations
-
 import numpy as np
 
 

@@ -4,7 +4,7 @@ Provides consistent data quality checks and preprocessing validation.
 """
 
 import warnings
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 import h5py
 import numpy as np
@@ -15,7 +15,7 @@ class DataValidator:
 
     @staticmethod
     def validate_hdf5_file(
-        filepath: str, required_keys: Optional[List[str]] = None
+        filepath: str, required_keys: list[str] | None = None
     ) -> bool:
         """Validate HDF5 file structure and accessibility."""
         try:
@@ -30,8 +30,8 @@ class DataValidator:
 
     @staticmethod
     def validate_stellar_data(
-        data: np.ndarray, feature_names: List[str], max_nan_fraction: float = 0.5
-    ) -> Dict[str, Any]:
+        data: np.ndarray, feature_names: list[str], max_nan_fraction: float = 0.5
+    ) -> dict[str, Any]:
         """Validate stellar data arrays for quality issues."""
         validation_report = {"valid": True, "warnings": [], "errors": [], "stats": {}}
 
@@ -93,7 +93,7 @@ class DataValidator:
     def check_data_leakage(
         train_ids: np.ndarray,
         val_ids: np.ndarray,
-        test_ids: Optional[np.ndarray] = None,
+        test_ids: np.ndarray | None = None,
     ) -> bool:
         """Check for data leakage between train/validation/test sets."""
         # Check train-validation overlap

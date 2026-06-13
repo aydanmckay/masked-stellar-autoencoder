@@ -43,7 +43,7 @@ with h5py.File("220M_pretrain_data.h5", "a") as hf_out:
                 )
                 new_dtypes.append((name, ">f8"))
             else:
-                array3.append((col))  # Convert other numeric types to float3
+                array3.append(col)  # Convert other numeric types to float3
                 new_dtypes.append((name, col.dtype.str))
         structured_rows = list(zip(*array3, strict=False))
         array1 = np.array(structured_rows, dtype=new_dtypes)

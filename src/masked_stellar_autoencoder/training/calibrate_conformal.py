@@ -10,8 +10,6 @@ Example:
 Arrays: y_val (N, L), pred_val (N, L, 3) lower/median/upper from the same scaler as training.
 """
 
-from __future__ import annotations
-
 import argparse
 import json
 
@@ -30,8 +28,8 @@ def main() -> None:
     ap.add_argument("--out", required=True)
     args = ap.parse_args()
 
-    y_val = np.load(args.y_val)
-    pred_val = np.load(args.pred_val)
+    y_val = np.load(args.y_val, allow_pickle=False)
+    pred_val = np.load(args.pred_val, allow_pickle=False)
     doc = calibrate_cqr_offsets(y_val, pred_val, alpha=args.alpha)
     with open(args.out, "w") as f:
         json.dump(doc, f, indent=2)

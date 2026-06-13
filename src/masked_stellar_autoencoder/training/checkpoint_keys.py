@@ -2,12 +2,10 @@
 Normalize checkpoint dict keys across pretrain vs fine-tune saves (no torch import).
 """
 
-from __future__ import annotations
-
-from typing import Any, Dict
+from typing import Any
 
 
-def autoencoder_state_dict(ckpt: Dict[str, Any]) -> Dict[str, Any]:
+def autoencoder_state_dict(ckpt: dict[str, Any]) -> dict[str, Any]:
     """
     Fine-tune saves use ``autoencoder_state_dict``; pretrain saves use ``model_state_dict``.
     """
@@ -21,7 +19,7 @@ def autoencoder_state_dict(ckpt: Dict[str, Any]) -> Dict[str, Any]:
     )
 
 
-def prediction_head_state_dict(ckpt: Dict[str, Any]) -> Dict[str, Any]:
+def prediction_head_state_dict(ckpt: dict[str, Any]) -> dict[str, Any]:
     """Required for eval; absent on pretrain-only checkpoints."""
     if "prediction_head_state_dict" in ckpt:
         return ckpt["prediction_head_state_dict"]

@@ -19,7 +19,7 @@ def main():
     args = parser.parse_args()
 
     # load YAML
-    with open(args.config, "r") as f:
+    with open(args.config) as f:
         config = yaml.safe_load(f)
     expand_config_paths(config)
 

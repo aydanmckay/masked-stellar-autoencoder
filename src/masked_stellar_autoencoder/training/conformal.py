@@ -6,16 +6,14 @@ Offsets are computed on a calibration set and applied as:
   q_hi' = q_hi + offsets_upper
 """
 
-from __future__ import annotations
-
-from typing import Any, Dict, List, Tuple
+from typing import Any
 
 import numpy as np
 
 
 def conformity_scores_interval(
     y: np.ndarray, q_lo: np.ndarray, q_hi: np.ndarray
-) -> Tuple[np.ndarray, np.ndarray]:
+) -> tuple[np.ndarray, np.ndarray]:
     """Per (sample, label) one-sided gaps outside [q_lo, q_hi]."""
     s_lo = np.maximum(0.0, q_lo - y)
     s_hi = np.maximum(0.0, y - q_hi)
@@ -26,7 +24,7 @@ def calibrate_cqr_offsets(
     y_val: np.ndarray,
     pred_val: np.ndarray,
     alpha: float = 0.1,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """
     Asymmetric conformal offsets per label from val residuals.
 
@@ -55,8 +53,8 @@ def calibrate_cqr_offsets(
     m = np.isfinite(y_val) & np.isfinite(q_lo) & np.isfinite(q_hi)
     q_level = min(1.0, max(0.0, 1.0 - float(alpha)))
 
-    offsets_lower: List[float] = []
-    offsets_upper: List[float] = []
+    offsets_lower: list[float] = []
+    offsets_upper: list[float] = []
     for j in range(ell):
         ml = m[:, j]
         if int(np.count_nonzero(ml)) < 5:
@@ -75,7 +73,7 @@ def calibrate_cqr_offsets(
     }
 
 
-def apply_cqr_offsets_inplace(pred: np.ndarray, calib: Dict[str, Any]) -> np.ndarray:
+def apply_cqr_offsets_inplace(pred: np.ndarray, calib: dict[str, Any]) -> np.ndarray:
     """Apply offsets to (N, L, 3) predictions in place; returns pred."""
     if pred.ndim != 3 or pred.shape[2] != 3:
         raise ValueError("pred must have shape (N, L, 3)")

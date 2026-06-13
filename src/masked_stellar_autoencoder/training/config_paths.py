@@ -2,10 +2,8 @@
 Expand ${VAR} / ~ in YAML file paths so configs work on HPC (Narval, etc.).
 """
 
-from __future__ import annotations
-
 import os
-from typing import Any, Dict
+from typing import Any
 
 
 def expand_path(p: Any) -> Any:
@@ -14,7 +12,7 @@ def expand_path(p: Any) -> Any:
     return os.path.expandvars(os.path.expanduser(p))
 
 
-def expand_config_paths(config: Dict[str, Any]) -> None:
+def expand_config_paths(config: dict[str, Any]) -> None:
     """In-place: resolve environment variables in known filesystem path fields."""
     data = config.get("data")
     if isinstance(data, dict):
@@ -47,7 +45,7 @@ def expand_config_paths(config: Dict[str, Any]) -> None:
         ft["ensemble_path"] = expand_path(ft["ensemble_path"])
 
 
-def ft_checkpoint_paths(config: Dict[str, Any], seed: int) -> tuple[str, str]:
+def ft_checkpoint_paths(config: dict[str, Any], seed: int) -> tuple[str, str]:
     """
     Fine-tune artifact paths. When ensemble mode is on, append _seed{seed} before the extension
     so parallel/array jobs do not clobber checkpoints.

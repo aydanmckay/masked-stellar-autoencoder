@@ -2,9 +2,7 @@
 Shared fine-tuning data preparation (splits, scaling) for finetune_msa, eval_ensemble, and pilots.
 """
 
-from __future__ import annotations
-
-from typing import Any, Dict, Optional, Tuple
+from typing import Any
 
 import numpy as np
 import pandas as pd
@@ -23,8 +21,8 @@ from .config_paths import expand_config_paths
 
 
 def _filter_metal_poor(
-    data: pd.DataFrame, errordata: pd.DataFrame, mp: Dict[str, Any]
-) -> Tuple[pd.DataFrame, pd.DataFrame]:
+    data: pd.DataFrame, errordata: pd.DataFrame, mp: dict[str, Any]
+) -> tuple[pd.DataFrame, pd.DataFrame]:
     keep = np.ones(len(data), dtype=bool)
     if mp.get("require_finite_e_fe_h"):
         keep &= data["e_fe_h"].notna().to_numpy()
@@ -48,8 +46,8 @@ def _filter_metal_poor(
 
 
 def _split_data(
-    data: pd.DataFrame, errordata: pd.DataFrame, mp: Dict[str, Any]
-) -> Tuple[np.ndarray, ...]:
+    data: pd.DataFrame, errordata: pd.DataFrame, mp: dict[str, Any]
+) -> tuple[np.ndarray, ...]:
     err_safe = errordata.fillna(errordata.quantile(0.9))
     errordata = err_safe.fillna(err_safe.median()).fillna(1.0)
 
@@ -86,10 +84,10 @@ def _split_data(
 def _augment_below_feh(
     trainset: np.ndarray,
     etrainset: np.ndarray,
-    mp: Dict[str, Any],
+    mp: dict[str, Any],
     feh_col: int,
     seed: int,
-) -> Tuple[np.ndarray, np.ndarray]:
+) -> tuple[np.ndarray, np.ndarray]:
     if mp.get("augment_below_feh") is not None and mp.get("augment_fraction", 0) > 0:
         th = float(mp["augment_below_feh"])
         frac = float(mp["augment_fraction"])
@@ -130,7 +128,7 @@ def _scale_parallax(
     parallax_target_space: str,
     parallax_floor_mas: float,
     scaler_cls: Any,
-) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, Any]:
+) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, Any]:
     if parallax_target_space == "log10_mas":
         pi_tr = trainset[:, pos].astype(np.float64).copy()
         pi_va = validset[:, pos].astype(np.float64).copy()
@@ -201,8 +199,8 @@ def _scale_features(
     evalidset: np.ndarray,
     etestset: np.ndarray,
     cols: list,
-    pproc_early: Dict[str, Any],
-) -> Tuple[
+    pproc_early: dict[str, Any],
+) -> tuple[
     np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray, RobustScaler
 ]:
     featurescaler = RobustScaler()
@@ -237,11 +235,53 @@ def _scale_features(
     return trainset, validset, testset, etrainset, evalidset, etestset, featurescaler
 
 
+def _scale_paired_label_blocks(
+    target_train: np.ndarray,
+    target_valid: np.ndarray,
+    num_classes: int,
+    scaler_cls: Any,
+) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, list]:
+    scalers = [scaler_cls() for _ in range(int(num_classes / 2))]
+    labelled_set = []
+    e_labelled_set = []
+    vlabelled_set = []
+    e_vlabelled_set = []
+
+    for i in range(int(num_classes / 2)):
+        y_base = target_train[:, i * 2].reshape(-1, 1)
+        labelled_set.append(scalers[i].fit_transform(y_base))
+        y_plus = y_base + target_train[:, i * 2 + 1].reshape(-1, 1)
+        vy_base = target_valid[:, i * 2].reshape(-1, 1)
+        vlabelled_set.append(scalers[i].transform(vy_base))
+        vy_plus = vy_base + target_valid[:, i * 2 + 1].reshape(-1, 1)
+
+        if hasattr(scalers[i], "scale_"):
+            scale_attr = scalers[i].scale_
+            elabel = target_train[:, i * 2 + 1] / scale_attr
+            velabel = target_valid[:, i * 2 + 1] / scale_attr
+        else:
+            elabel = np.abs(
+                scalers[i].transform(y_plus) - scalers[i].transform(y_base)
+            ).ravel()
+            velabel = np.abs(
+                scalers[i].transform(vy_plus) - scalers[i].transform(vy_base)
+            ).ravel()
+
+        e_labelled_set.append(elabel.reshape(-1, 1))
+        e_vlabelled_set.append(velabel.reshape(-1, 1))
+
+    labelled_set = np.concatenate(labelled_set, axis=1)
+    e_labelled_set = np.concatenate(e_labelled_set, axis=1)
+    vlabelled_set = np.concatenate(vlabelled_set, axis=1)
+    e_vlabelled_set = np.concatenate(e_vlabelled_set, axis=1)
+    return labelled_set, e_labelled_set, vlabelled_set, e_vlabelled_set, scalers
+
+
 def prepare_finetune_arrays(
-    config: Dict[str, Any],
-    max_train_rows: Optional[int] = None,
-    max_valid_rows: Optional[int] = None,
-) -> Dict[str, Any]:
+    config: dict[str, Any],
+    max_train_rows: int | None = None,
+    max_valid_rows: int | None = None,
+) -> dict[str, Any]:
     """
     Build scaled train/val/test tensors and scalers from finetuning config.
 
@@ -293,12 +333,6 @@ def prepare_finetune_arrays(
     label_scaler_kind = str(pproc_early.get("label_scaler", "standard")).lower()
     scaler_cls = _get_scaler_cls(label_scaler_kind)
 
-    scalers = [scaler_cls() for _ in range(int(num_classes / 2))]
-    labelled_set = []
-    e_labelled_set = []
-    vlabelled_set = []
-    e_vlabelled_set = []
-
     if pproc_early.get("teff_target_space", "linear") == "log10":
         for ts_arr in [target_train, target_valid, target_test]:
             m_pos = ts_arr[:, 0] > 0
@@ -306,28 +340,9 @@ def prepare_finetune_arrays(
                 ts_arr[m_pos, 1] = ts_arr[m_pos, 1] / (ts_arr[m_pos, 0] * np.log(10.0))
                 ts_arr[m_pos, 0] = np.log10(ts_arr[m_pos, 0])
 
-    for i in range(int(num_classes / 2)):
-        y_base = target_train[:, i * 2].reshape(-1, 1)
-        labelled_set.append(scalers[i].fit_transform(y_base))
-        y_plus = y_base + target_train[:, i * 2 + 1].reshape(-1, 1)
-        vy_base = target_valid[:, i * 2].reshape(-1, 1)
-        vlabelled_set.append(scalers[i].transform(vy_base))
-        vy_plus = vy_base + target_valid[:, i * 2 + 1].reshape(-1, 1)
-
-        if hasattr(scalers[i], "scale_"):
-            scale_attr = scalers[i].scale_
-            elabel = target_train[:, i * 2 + 1] / scale_attr
-            velabel = target_valid[:, i * 2 + 1] / scale_attr
-        else:
-            elabel = np.abs(
-                scalers[i].transform(y_plus) - scalers[i].transform(y_base)
-            ).ravel()
-            velabel = np.abs(
-                scalers[i].transform(vy_plus) - scalers[i].transform(vy_base)
-            ).ravel()
-
-        e_labelled_set.append(elabel.reshape(-1, 1))
-        e_vlabelled_set.append(velabel.reshape(-1, 1))
+    labelled_set, e_labelled_set, vlabelled_set, e_vlabelled_set, scalers = (
+        _scale_paired_label_blocks(target_train, target_valid, num_classes, scaler_cls)
+    )
 
     target_set = target_test[:, [i for i in range(num_classes) if i % 2 == 0]]
 
@@ -374,10 +389,12 @@ def prepare_finetune_arrays(
         snr_cap=astrometry_snr_cap,
     )
 
-    labelled_set.append(np.asarray(label, dtype=np.float32).reshape(-1, 1))
-    labelled_set = np.concatenate(labelled_set, axis=1)
-    e_labelled_set.append(np.asarray(elabel, dtype=np.float32).reshape(-1, 1))
-    e_labelled_set = np.concatenate(e_labelled_set, axis=1)
+    labelled_set = np.concatenate(
+        [labelled_set, np.asarray(label, dtype=np.float32).reshape(-1, 1)], axis=1
+    )
+    e_labelled_set = np.concatenate(
+        [e_labelled_set, np.asarray(elabel, dtype=np.float32).reshape(-1, 1)], axis=1
+    )
     scalers.append(scaler)
 
     target_set = np.concatenate(
@@ -385,10 +402,12 @@ def prepare_finetune_arrays(
     )
     label_names = ["teff", "logg", "fe_h", "alpha", "age", "parallax"]
 
-    vlabelled_set.append(np.asarray(vlabel, dtype=np.float32).reshape(-1, 1))
-    vlabelled_set = np.concatenate(vlabelled_set, axis=1)
-    e_vlabelled_set.append(np.asarray(velabel, dtype=np.float32).reshape(-1, 1))
-    e_vlabelled_set = np.concatenate(e_vlabelled_set, axis=1)
+    vlabelled_set = np.concatenate(
+        [vlabelled_set, np.asarray(vlabel, dtype=np.float32).reshape(-1, 1)], axis=1
+    )
+    e_vlabelled_set = np.concatenate(
+        [e_vlabelled_set, np.asarray(velabel, dtype=np.float32).reshape(-1, 1)], axis=1
+    )
 
     trainset, validset, testset, etrainset, evalidset, etestset, featurescaler = (
         _scale_features(

@@ -4,8 +4,18 @@ import pytest
 from masked_stellar_autoencoder.training.conformal import (  # noqa: E402
     apply_cqr_offsets_inplace,
     calibrate_cqr_offsets,
+    conformity_scores_interval,
     interval_coverage,
 )
+
+
+def test_conformity_scores_interval():
+    y = np.array([0.0, 1.0])
+    q_lo = np.array([-0.5, 0.5])
+    q_hi = np.array([0.5, 1.5])
+    s_lo, s_hi = conformity_scores_interval(y, q_lo, q_hi)
+    np.testing.assert_allclose(s_lo, [0.0, 0.0])
+    np.testing.assert_allclose(s_hi, [0.0, 0.0])
 
 
 def test_calibrate_and_apply_widens_interval():

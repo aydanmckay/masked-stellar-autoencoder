@@ -17,8 +17,6 @@ Requirements:
 If `inference-data` is not provided, it evaluates against the unmasked test-split defined in the config.
 """
 
-from __future__ import annotations
-
 import argparse
 import json
 import os
@@ -37,11 +35,14 @@ from masked_stellar_autoencoder.training.checkpoint_keys import (
 )
 from masked_stellar_autoencoder.training.config_paths import expand_config_paths
 from masked_stellar_autoencoder.training.conformal import apply_cqr_offsets_inplace
-from masked_stellar_autoencoder.training.eval_ensemble import _inverse_quantile_block
+from masked_stellar_autoencoder.training.eval_ensemble import (
+    _feature_batch_tensor,
+    _inverse_quantile_block,
+)
 from masked_stellar_autoencoder.training.finetune_data import prepare_finetune_arrays
 
 
-@torch.no_grad()
+@torch.inference_mode()
 def infer_catalogue(
     model,
     head,
@@ -56,10 +57,7 @@ def infer_catalogue(
     quantiles = []
 
     for i in range(0, len(X_scaled), batch_size):
-        xb = torch.tensor(
-            X_scaled[i : i + batch_size], dtype=torch.float32, device=device
-        )
-        xb = torch.nan_to_num(xb, nan=-9999.0)
+        xb = _feature_batch_tensor(X_scaled[i : i + batch_size], device)
 
         # Extracted 256-D Latent Encoder Emdeddings
         z = model.encoder(xb)
@@ -130,6 +128,15 @@ def load_scalers(state, config):
     return pack, featurescaler, label_scalers, label_names, cols, recon_cols
 
 
+def _hdf5_feature_matrix(dset, cols: list[str]) -> np.ndarray:
+    """Stack requested HDF5 columns without a pandas intermediate."""
+    names = dset.dtype.names or ()
+    present = [c for c in cols if c in names]
+    if not present:
+        raise ValueError(f"No requested feature columns found in dataset: {cols}")
+    return np.column_stack([dset[c][:] for c in present])
+
+
 def load_inference_data(inference_data, pack, featurescaler, cols):
     if inference_data:
         print(f"Loading external inference catalogue: {inference_data}")
@@ -137,15 +144,10 @@ def load_inference_data(inference_data, pack, featurescaler, cols):
             if "table" in f:
                 dset = f["table"]
             else:
-                dset = f[list(f.keys())[0]]  # Just pull first key
-            # We strictly slice only the features requested in `config["data"]["feature_cols"]`
-            df_inf = pd.DataFrame(
-                {c: dset[c][:] for c in cols if c in dset.dtype.names}
-            )
-            source_ids = f.get("source_id", np.arange(len(df_inf)))[:]
+                dset = f[list(f.keys())[0]]
+            X_infer = _hdf5_feature_matrix(dset, cols)
+            source_ids = f.get("source_id", np.arange(len(X_infer)))[:]
 
-        # Standardize missing as pandas nans before scaler
-        X_infer = df_inf.values
         X_infer_scaled = featurescaler.transform(X_infer)
     else:
         print(
@@ -183,19 +185,15 @@ def build_and_load_models(config, num_cols, num_recon_cols, num_labels, state, d
 
 
 def save_predictions(out_path, source_ids, label_names, phys_q, embeddings):
-    out_dict = {"source_id": source_ids}
-
-    # Store predictions via METHODOLOGY policy `PARAM_med` alongside uncertainty bounds
-    for idx, name in enumerate(label_names):
-        out_dict[f"{name}_lower"] = phys_q[:, idx, 0]
-        out_dict[f"{name}_med"] = phys_q[:, idx, 1]
-        out_dict[f"{name}_upper"] = phys_q[:, idx, 2]
-
-    # Also publish extracted representations (usually the 256-D vectors)
-    for embed_idx in range(embeddings.shape[1]):
-        out_dict[f"embedding_{embed_idx}"] = embeddings[:, embed_idx]
-
-    df_out = pd.DataFrame(out_dict)
+    label_cols = {
+        f"{name}_{bound}": phys_q[:, idx, qidx]
+        for idx, name in enumerate(label_names)
+        for qidx, bound in enumerate(("lower", "med", "upper"))
+    }
+    embed_cols = {
+        f"embedding_{j}": embeddings[:, j] for j in range(embeddings.shape[1])
+    }
+    df_out = pd.DataFrame({"source_id": source_ids, **label_cols, **embed_cols})
 
     os.makedirs(os.path.dirname(os.path.abspath(out_path)), exist_ok=True)
     df_out.to_csv(out_path, index=False)

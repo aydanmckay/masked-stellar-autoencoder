@@ -61,9 +61,9 @@ def main():
         " test:",
         pack["testset"].shape[0],
     )
+    p10, p50, p90 = np.percentile(feh, [10, 50, 90])
     print(
-        "  [Fe/H] train percentiles (raw): p10=%.3f p50=%.3f p90=%.3f"
-        % tuple(np.percentile(feh, [10, 50, 90]))
+        f"  [Fe/H] train percentiles (raw): p10={p10:.3f} p50={p50:.3f} p90={p90:.3f}"
     )
     print("  [Fe/H] train fraction < -2:", float(np.mean(feh < -2)))
     print("  finetuning.multitask in config:", config["finetuning"].get("multitask"))

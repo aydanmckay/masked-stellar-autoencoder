@@ -32,12 +32,12 @@ platforms = ["osx-arm64", "linux-64"]
 [tool.pixi.tasks]
 lint = "ruff check ."
 format = "ruff format ."
-test = "PYTHONPATH=src:. pytest tests/"
+test = "pytest tests/"
 # Fast gate: hooks only (pytest is separate via `ci-tests` skip — see pre-commit config).
 ci-precommit = "SKIP=ci-tests pre-commit run --all-files --color always"
 # Same sequence as .github/workflows CI test job + pre-commit parity. Inner
 # `pre-commit run` skips `ci-tests` so pytest is not run twice (that hook runs on commit).
-ci = "SKIP=ci-tests pre-commit run --all-files --color always && PYTHONPATH=src:. pytest tests/"
+ci = "SKIP=ci-tests pre-commit run --all-files --color always && pytest tests/"
 
 [tool.pixi.dependencies]
 python = "3.12.*"
@@ -61,8 +61,11 @@ masked-stellar-autoencoder = { path = ".", editable = true }
 rtdl_num_embeddings = ">=0.0.12"
 pre-commit = ">=4,<5"
 
+[tool.ruff]
+target-version = "py312"
+
 [tool.ruff.lint]
-select = ["E", "F", "W", "I", "B", "SIM"]
+select = ["E", "F", "W", "I", "B", "SIM", "UP"]
 ignore = [
     "E501", "B008", "SIM115", "SIM108", "B904", "B007", "SIM102", "B028", "B006",
     "SIM105", "SIM101", "B023", "SIM118", "B018", "SIM117", "SIM210", "E402",
