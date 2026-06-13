@@ -789,6 +789,207 @@ class TabResnetWrapper(BaseEstimator):
             if m.bias is not None:
                 nn.init.constant_(m.bias, 0)
 
+    def _setup_pretrain_optimizer(self):
+        decay, no_decay = [], []
+        for name, param in self.model.named_parameters():
+            if "bias" in name or "norm" in name:
+                no_decay.append(param)
+            else:
+                decay.append(param)
+        param_groups = [
+            {"params": decay, "weight_decay": self.wd},
+            {"params": no_decay, "weight_decay": 0.0},
+        ]
+        if self.opt == "adam":
+            optimizer = optim.Adam(param_groups, lr=self.lr)
+        elif self.opt == "adamw":
+            optimizer = optim.AdamW(param_groups, lr=self.lr)
+        elif self.opt == "sgd":
+            optimizer = optim.SGD(param_groups, lr=self.lr, momentum=0.9)
+        else:
+            raise ValueError(f"Unknown pretrain optimizer {self.opt!r}")
+        scheduler = optim.lr_scheduler.CosineAnnealingWarmRestarts(
+            optimizer,
+            T_0=self.scheduler_cosine_t0,
+            T_mult=self.scheduler_cosine_t_mult,
+            eta_min=self.lr * self.scheduler_eta_min_factor,
+        )
+        return optimizer, scheduler
+
+    def _configure_pretrain_logging(self) -> None:
+        log_dir = os.path.dirname(self.pt_log_file) or "."
+        os.makedirs(log_dir, exist_ok=True)
+        save_dir = os.path.dirname(self.pt_save_str)
+        if save_dir:
+            os.makedirs(save_dir, exist_ok=True)
+        logging.basicConfig(
+            filename=self.pt_log_file,
+            level=logging.INFO,
+            format="%(asctime)s - Sub-Epoch: %(message)s",
+            datefmt="%Y-%m-%d %H:%M:%S",
+            filemode="a",
+        )
+
+    def _load_pretrain_resume(self, pretrained, optimizer, scheduler):
+        epoch_loss = 0.0
+        loss_div = 0.0
+        pretrained_epoch = 0
+        if pretrained is None:
+            return epoch_loss, loss_div, pretrained_epoch
+        checkpoint = torch_load_trusted(pretrained)
+        self.model.load_state_dict(checkpoint["model_state_dict"])
+        optimizer.load_state_dict(checkpoint["optimizer_state_dict"])
+        scheduler.load_state_dict(checkpoint["scheduler_state_dict"])
+        epoch_loss = checkpoint["epoch_loss"]
+        loss_div = checkpoint["loss_div"]
+        pretrained_epoch = checkpoint["epoch"]
+        print("Picking up pre-training from epoch", pretrained_epoch)
+        return epoch_loss, loss_div, pretrained_epoch
+
+    def _pretrain_checkpoint_payload(
+        self, epoch, optimizer, scheduler, epoch_loss, loss_div
+    ) -> dict:
+        return {
+            "epoch": epoch + 1,
+            "model_state_dict": self.model.state_dict(),
+            "optimizer_state_dict": optimizer.state_dict(),
+            "scheduler_state_dict": scheduler.state_dict(),
+            "epoch_loss": epoch_loss,
+            "loss_div": loss_div,
+        }
+
+    def _save_pretrain_checkpoints(
+        self, epoch, optimizer, scheduler, epoch_loss, loss_div
+    ) -> None:
+        payload = self._pretrain_checkpoint_payload(
+            epoch, optimizer, scheduler, epoch_loss, loss_div
+        )
+        torch.save(payload, self.pt_save_str)
+        if (
+            self.checkpoint_interval is not None
+            and (epoch + 1) % self.checkpoint_interval == 0
+        ):
+            interval_path = (
+                f"{self.pt_save_str.split('.')[0]}_checkpoint_{epoch + 1}.pth"
+            )
+            torch.save(payload, interval_path)
+
+    def _pretrain_reconstruction_loss(
+        self,
+        X_batch,
+        eX_batch,
+        X_reconstructed,
+        z,
+        mask,
+        nanmask,
+    ):
+        reconstruction_mask = mask[:, : -self.diff] & nanmask[:, : -self.diff]
+        reconstruction_w = 1.0 / (eX_batch[:, : -self.diff] ** 2 + 1e-8)
+        return (
+            self.loss_fn(
+                X_batch[:, : -self.diff],
+                X_reconstructed,
+                reconstruction_mask,
+                reconstruction_w,
+            )
+            + self.lasso * z.abs().sum()
+        )
+
+    def _train_pretrain_key(
+        self, key, optimizer, mini_batch, epoch_loss, loss_div, subkeynum
+    ):
+        X_train, eX_train = self._load_data(key)
+        train_loader = DataLoader(
+            TensorDataset(X_train, eX_train),
+            batch_size=mini_batch,
+            shuffle=True,
+        )
+        for X_batch, eX_batch in train_loader:
+            if self.pert_features:
+                X_batch = X_batch + self._pert_noise(X_batch, eX_batch)
+            X_masked, mask, nanmask = self._apply_mask(X_batch)
+            X_reconstructed, z = self.model(X_masked)
+            loss = self._pretrain_reconstruction_loss(
+                X_batch, eX_batch, X_reconstructed, z, mask, nanmask
+            )
+            optimizer.zero_grad()
+            loss.backward()
+            torch.nn.utils.clip_grad_norm_(self.model.parameters(), max_norm=1.0)
+            optimizer.step()
+            epoch_loss += loss.item()
+        loss_div += len(train_loader)
+        if torch.cuda.is_available() and subkeynum % 10 == 0:
+            torch.cuda.empty_cache()
+        logging.info(f"{subkeynum + 1}, Loss: {epoch_loss / loss_div}")
+        return epoch_loss, loss_div
+
+    def _run_pretrain_epoch(
+        self,
+        epoch,
+        num_epochs,
+        train_keys,
+        val_keys,
+        optimizer,
+        scheduler,
+        mini_batch,
+        epoch_loss,
+        loss_div,
+        running_pt_loss,
+        running_pt_validation_loss,
+    ):
+        random.shuffle(train_keys)
+        self.model.train()
+        pbar = tqdm.tqdm(
+            enumerate(train_keys),
+            total=len(train_keys),
+            desc="Iterating Training Files",
+        )
+        for subkeynum, key in pbar:
+            try:
+                epoch_loss, loss_div = self._train_pretrain_key(
+                    key, optimizer, mini_batch, epoch_loss, loss_div, subkeynum
+                )
+            except Exception as e:
+                print(f"Error in training loop for key {key}: {e}")
+                continue
+
+        scheduler.step()
+        mean_loss = epoch_loss / loss_div if loss_div else 0.0
+        print(f"Pre-training Epoch [{epoch + 1}/{num_epochs}], Loss: {mean_loss}")
+        running_pt_loss.append(mean_loss)
+
+        if val_keys is not None:
+            validation_loss = self.validate(val_keys, self.loss_fn, mini_batch)
+            logging.info(f"{epoch + 1}, Validation Loss: {validation_loss}")
+            running_pt_validation_loss.append(validation_loss)
+
+        self._save_pretrain_checkpoints(
+            epoch, optimizer, scheduler, epoch_loss, loss_div
+        )
+        return epoch_loss, loss_div
+
+    def _chain_finetune_after_pretrain(self, ft_stuff, test_stuff) -> None:
+        if ft_stuff is None:
+            return
+        self.fit(
+            ft_stuff[0],
+            ft_stuff[1],
+            ft_stuff[2],
+            e_y_train=ft_stuff[3],
+            X_val=ft_stuff[4],
+            eX_val=ft_stuff[5],
+            y_val=ft_stuff[6],
+            e_y_val=ft_stuff[7],
+            num_epochs=ft_stuff[8],
+            mini_batch=ft_stuff[9],
+            linearprobe=ft_stuff[10],
+            maskft=ft_stuff[11],
+            multitask=ft_stuff[12],
+            rncloss=ft_stuff[13],
+            last=True,
+            test_stuff=test_stuff,
+        )
+
     def pretrain_hdf(
         self,
         train_keys,
@@ -810,215 +1011,32 @@ class TabResnetWrapper(BaseEstimator):
             test_stuff:
             mini_batch: Mini-batch size for pretraining.
         """
-
-        # Separate decay/no_decay for L2 (weight decay)
-        decay, no_decay = [], []
-        for name, param in self.model.named_parameters():
-            if "bias" in name or "norm" in name:
-                no_decay.append(param)
-            else:
-                decay.append(param)
-
-        if self.opt == "adam":
-            optimizer = optim.Adam(
-                [
-                    {"params": decay, "weight_decay": self.wd},
-                    {"params": no_decay, "weight_decay": 0.0},
-                ],
-                lr=self.lr,
-            )
-        elif self.opt == "adamw":
-            optimizer = optim.AdamW(
-                [
-                    {"params": decay, "weight_decay": self.wd},
-                    {"params": no_decay, "weight_decay": 0.0},
-                ],
-                lr=self.lr,
-            )
-        elif self.opt == "sgd":
-            optimizer = optim.SGD(
-                [
-                    {"params": decay, "weight_decay": self.wd},
-                    {"params": no_decay, "weight_decay": 0.0},
-                ],
-                lr=self.lr,
-                momentum=0.9,
-            )
-        # Use cosine annealing with warm restarts for better convergence
-        scheduler = optim.lr_scheduler.CosineAnnealingWarmRestarts(
-            optimizer,
-            T_0=self.scheduler_cosine_t0,
-            T_mult=self.scheduler_cosine_t_mult,
-            eta_min=self.lr * self.scheduler_eta_min_factor,
-        )
-
-        # Configure logging with proper file handling
-        os.makedirs(
-            os.path.dirname(self.pt_log_file)
-            if os.path.dirname(self.pt_log_file)
-            else ".",
-            exist_ok=True,
-        )
-        _pt_sd = os.path.dirname(self.pt_save_str)
-        if _pt_sd:
-            os.makedirs(_pt_sd, exist_ok=True)
-        logging.basicConfig(
-            filename=self.pt_log_file,
-            level=logging.INFO,
-            format="%(asctime)s - Sub-Epoch: %(message)s",
-            datefmt="%Y-%m-%d %H:%M:%S",
-            filemode="a",
-        )
+        optimizer, scheduler = self._setup_pretrain_optimizer()
+        self._configure_pretrain_logging()
 
         running_pt_loss = []
         running_pt_validation_loss = []
-
-        epoch_loss = 0.0
-        loss_div = 0.0
-        pretrained_epoch = 0
-
-        if pretrained is not None:
-            checkpoint = torch_load_trusted(pretrained)
-            self.model.load_state_dict(checkpoint["model_state_dict"])
-            optimizer.load_state_dict(checkpoint["optimizer_state_dict"])
-            scheduler.load_state_dict(checkpoint["scheduler_state_dict"])
-
-            epoch_loss = checkpoint["epoch_loss"]
-            loss_div = checkpoint["loss_div"]
-            pretrained_epoch = checkpoint["epoch"]
-            print("Picking up pre-training from epoch", pretrained_epoch)
+        epoch_loss, loss_div, pretrained_epoch = self._load_pretrain_resume(
+            pretrained, optimizer, scheduler
+        )
 
         for epoch in range(num_epochs):
             epoch += pretrained_epoch
-
-            random.shuffle(train_keys)
-
-            n_files = len(train_keys)
-            pbar = tqdm.tqdm(
-                enumerate(train_keys), total=n_files, desc="Iterating Training Files"
-            )
-            self.model.train()
-
-            for subkeynum, key in pbar:
-                try:
-                    X_train, eX_train = self._load_data(key)
-
-                    train_loader = DataLoader(
-                        TensorDataset(X_train, eX_train),
-                        batch_size=mini_batch,
-                        shuffle=True,
-                    )
-
-                    for X_batch, eX_batch in train_loader:
-                        # Apply data augmentation if enabled (add Gaussian noise scaled by errors)
-                        if self.pert_features:
-                            X_batch = X_batch + self._pert_noise(X_batch, eX_batch)
-
-                        # Apply masking to training data batch
-                        X_masked, mask, nanmask = self._apply_mask(X_batch)
-
-                        # Forward pass (classification output is ignored for pretraining)
-                        X_reconstructed, z = self.model(X_masked)
-
-                        # Compute the reconstruction loss
-                        # Combine masks: reconstruct only positions that were (1) originally valid AND (2) artificially masked
-                        reconstruction_mask = (
-                            mask[:, : -self.diff] & nanmask[:, : -self.diff]
-                        )
-                        l1_norm = z.abs().sum()
-                        reconstruction_w = 1.0 / (eX_batch[:, : -self.diff] ** 2 + 1e-8)
-                        loss = (
-                            self.loss_fn(
-                                X_batch[:, : -self.diff],
-                                X_reconstructed,
-                                reconstruction_mask,
-                                reconstruction_w,
-                            )
-                            + self.lasso * l1_norm
-                        )
-
-                        optimizer.zero_grad()
-                        loss.backward()
-                        # Clip gradients to prevent exploding gradients in deep networks
-                        torch.nn.utils.clip_grad_norm_(
-                            self.model.parameters(), max_norm=1.0
-                        )
-                        optimizer.step()
-
-                        epoch_loss += loss.item()
-
-                    loss_div += len(train_loader)
-
-                    # Clear GPU cache periodically
-                    if torch.cuda.is_available() and subkeynum % 10 == 0:
-                        torch.cuda.empty_cache()
-
-                    logging.info(f"{subkeynum + 1}, Loss: {epoch_loss / loss_div}")
-                except Exception as e:
-                    print(f"Error in training loop for key {key}: {e}")
-                    continue
-
-            scheduler.step()
-
-            print(
-                f"Pre-training Epoch [{epoch + 1}/{num_epochs}], Loss: {epoch_loss / loss_div}"
-            )
-            running_pt_loss.append(epoch_loss / loss_div)
-
-            # Validation step (if provided)
-            if val_keys is not None:
-                validation_loss = self.validate(val_keys, self.loss_fn, mini_batch)
-                logging.info(f"{epoch + 1}, Validation Loss: {validation_loss}")
-                running_pt_validation_loss.append(validation_loss)
-
-            torch.save(
-                {
-                    "epoch": epoch + 1,
-                    "model_state_dict": self.model.state_dict(),
-                    "optimizer_state_dict": optimizer.state_dict(),
-                    "scheduler_state_dict": scheduler.state_dict(),
-                    "epoch_loss": epoch_loss,
-                    "loss_div": loss_div,
-                },
-                self.pt_save_str,
+            epoch_loss, loss_div = self._run_pretrain_epoch(
+                epoch,
+                num_epochs,
+                train_keys,
+                val_keys,
+                optimizer,
+                scheduler,
+                mini_batch,
+                epoch_loss,
+                loss_div,
+                running_pt_loss,
+                running_pt_validation_loss,
             )
 
-            if self.checkpoint_interval is not None:
-                if (epoch + 1) % self.checkpoint_interval == 0:
-                    torch.save(
-                        {
-                            "epoch": epoch + 1,
-                            "model_state_dict": self.model.state_dict(),
-                            "optimizer_state_dict": optimizer.state_dict(),
-                            "scheduler_state_dict": scheduler.state_dict(),
-                            "epoch_loss": epoch_loss,
-                            "loss_div": loss_div,
-                        },
-                        self.pt_save_str.split(".")[0]
-                        + "_checkpoint_"
-                        + str(epoch + 1)
-                        + ".pth",
-                    )
-
-        if ft_stuff is not None:
-            self.fit(
-                ft_stuff[0],
-                ft_stuff[1],
-                ft_stuff[2],
-                e_y_train=ft_stuff[3],
-                X_val=ft_stuff[4],
-                eX_val=ft_stuff[5],
-                y_val=ft_stuff[6],
-                e_y_val=ft_stuff[7],
-                num_epochs=ft_stuff[8],
-                mini_batch=ft_stuff[9],
-                linearprobe=ft_stuff[10],
-                maskft=ft_stuff[11],
-                multitask=ft_stuff[12],
-                rncloss=ft_stuff[13],
-                last=True,
-                test_stuff=test_stuff,
-            )
+        self._chain_finetune_after_pretrain(ft_stuff, test_stuff)
 
     def validate(self, val_keys, criterion, mini_batch=32):
         """
@@ -1430,6 +1448,139 @@ class TabResnetWrapper(BaseEstimator):
             ft_lambda_rec=ft_lambda_rec,
         )
 
+    def _prepare_finetune_loader(
+        self, X_train, eX_train, y_train, e_y_train, mini_batch
+    ):
+        tensors = [
+            torch.Tensor(arr).to(self.device)
+            for arr in (X_train, eX_train, y_train, e_y_train)
+        ]
+        dataset = TensorDataset(*tensors)
+        return DataLoader(dataset, batch_size=mini_batch, shuffle=True)
+
+    def _configure_finetune_logging(self) -> None:
+        log_dir = os.path.dirname(self.ft_log_file) or "."
+        os.makedirs(log_dir, exist_ok=True)
+        if save_dir := os.path.dirname(self.ft_save_str):
+            os.makedirs(save_dir, exist_ok=True)
+        logging.basicConfig(
+            filename=self.ft_log_file,
+            level=logging.INFO,
+            format="%(asctime)s - Sub-Epoch: %(message)s",
+            datefmt="%Y-%m-%d %H:%M:%S",
+            filemode="a",
+            force=True,
+        )
+
+    def _set_finetune_train_mode(self, linearprobe: bool) -> None:
+        if linearprobe:
+            self.model.eval()
+            self.lp.train()
+        else:
+            self.model.train()
+            self.ft.train()
+
+    def _finetune_parameters(self, linearprobe: bool):
+        if linearprobe:
+            return list(self.lp.parameters())
+        return list(self.model.parameters()) + list(self.ft.parameters())
+
+    def _save_finetune_checkpoint(self, linearprobe: bool, epoch: int) -> None:
+        head_sd = self.lp.state_dict() if linearprobe else self.ft.state_dict()
+        payload = {
+            "autoencoder_state_dict": self.model.state_dict(),
+            "prediction_head_state_dict": head_sd,
+            "linear_probe": bool(linearprobe),
+            "featurescaler": self.featurescaler,
+            "label_scalers": getattr(self, "label_scalers", None),
+        }
+        torch.save(payload, self.ft_save_str)
+        if (
+            self.checkpoint_interval is not None
+            and (epoch + 1) % self.checkpoint_interval == 0
+        ):
+            interval_path = (
+                f"{self.ft_save_str.split('.')[0]}"
+                f"_checkpoint_{self.checkpoint_interval}.pth"
+            )
+            torch.save(payload, interval_path)
+
+    def _run_finetune_epoch(
+        self, train_loader, optimizer, scheduler, ctx, linearprobe, epoch, num_epochs
+    ):
+        self._set_finetune_train_mode(linearprobe)
+        epoch_loss = 0.0
+        for batch in train_loader:
+            loss = self._compute_finetune_batch_loss(batch, ctx)
+            optimizer.zero_grad()
+            loss.backward()
+            torch.nn.utils.clip_grad_norm_(
+                self._finetune_parameters(linearprobe), max_norm=1.0
+            )
+            optimizer.step()
+            epoch_loss += loss.item()
+        scheduler.step()
+        mean_loss = epoch_loss / len(train_loader)
+        print(f"Training Epoch [{epoch + 1}/{num_epochs}], Loss: {mean_loss}")
+        logging.info(f"Training Loss: {mean_loss}")
+        return mean_loss
+
+    def _maybe_validate_finetune(
+        self,
+        *,
+        X_val,
+        eX_val,
+        y_val,
+        e_y_val,
+        mini_batch,
+        linearprobe,
+        maskft,
+        multitask,
+        ftlf,
+        rncloss,
+        ftlabeldim,
+        ft_lambda_pred,
+        ft_lambda_rec,
+        ft_quantile_label_weights,
+        ft_use_sigma_quantile_weights,
+        ft_sigma_weight_floor,
+        ft_sigma_weight_normalize_batch,
+        parallax_mle_weight,
+        parallax_use_masked_pred,
+        parallax_label_idx,
+        parallax_sigma_floor,
+        parallax_sigma_scale,
+        consistency_params,
+    ):
+        if X_val is None or y_val is None:
+            return
+        validation_loss = self.validate_fit(
+            X_val,
+            eX_val,
+            y_val,
+            e_y_val=e_y_val,
+            mini_batch=mini_batch,
+            linearprobe=linearprobe,
+            maskft=maskft,
+            multitask=multitask,
+            ftlf=ftlf,
+            rncloss=rncloss,
+            ftlabeldim=ftlabeldim,
+            ft_lambda_pred=ft_lambda_pred,
+            ft_lambda_rec=ft_lambda_rec,
+            ft_quantile_label_weights=ft_quantile_label_weights,
+            ft_use_sigma_quantile_weights=ft_use_sigma_quantile_weights,
+            ft_sigma_weight_floor=ft_sigma_weight_floor,
+            ft_sigma_weight_normalize_batch=ft_sigma_weight_normalize_batch,
+            parallax_mle_weight=parallax_mle_weight,
+            parallax_use_masked_pred=parallax_use_masked_pred,
+            parallax_label_idx=parallax_label_idx,
+            parallax_sigma_floor=parallax_sigma_floor,
+            parallax_sigma_scale=parallax_sigma_scale,
+            consistency_params=consistency_params,
+        )
+        logging.info(f"Validation Loss: {validation_loss}")
+
     def fit(
         self,
         X_train,
@@ -1478,12 +1629,9 @@ class TabResnetWrapper(BaseEstimator):
         parallax_sigma_scale: float = 1.0,
         consistency_params: dict | None = None,
     ):
-        X_train = torch.Tensor(X_train).to(self.device)
-        eX_train = torch.Tensor(eX_train).to(self.device)
-        y_train = torch.Tensor(y_train).to(self.device)
-        e_y_train = torch.Tensor(e_y_train).to(self.device)
-        rdataset = TensorDataset(X_train, eX_train, y_train, e_y_train)
-        train_loader = DataLoader(rdataset, batch_size=mini_batch, shuffle=True)
+        train_loader = self._prepare_finetune_loader(
+            X_train, eX_train, y_train, e_y_train, mini_batch
+        )
 
         self._check_linearprobe_compatibility(linearprobe, ftlf, multitask, rncloss)
         self._init_finetune_head(linearprobe, ftlabeldim, ftact)
@@ -1523,104 +1671,42 @@ class TabResnetWrapper(BaseEstimator):
             linearprobe, ftopt, ftlr, ftl2, enc_lr, head_lambda, encoder_lambda
         )
 
-        os.makedirs(
-            os.path.dirname(self.ft_log_file)
-            if os.path.dirname(self.ft_log_file)
-            else ".",
-            exist_ok=True,
-        )
-        if _ft_sd := os.path.dirname(self.ft_save_str):
-            os.makedirs(_ft_sd, exist_ok=True)
-        logging.basicConfig(
-            filename=self.ft_log_file,
-            level=logging.INFO,
-            format="%(asctime)s - Sub-Epoch: %(message)s",
-            datefmt="%Y-%m-%d %H:%M:%S",
-            filemode="a",
-            force=True,
-        )
+        self._configure_finetune_logging()
 
         if pert_features or pert_labels:
             random.seed(feature_seed)
             torch.manual_seed(feature_seed)
 
         for epoch in range(num_epochs):
-            if linearprobe:
-                self.model.eval()
-                self.lp.train()
-            else:
-                self.model.train()
-                self.ft.train()
-            epoch_loss = 0
-
-            for batch in train_loader:
-                loss = self._compute_finetune_batch_loss(batch, ctx)
-
-                optimizer.zero_grad()
-                loss.backward()
-                torch.nn.utils.clip_grad_norm_(
-                    list(self.lp.parameters())
-                    if linearprobe
-                    else list(self.model.parameters()) + list(self.ft.parameters()),
-                    max_norm=1.0,
-                )
-                optimizer.step()
-                epoch_loss += loss.item()
-
-            scheduler.step()
-            print(
-                f"Training Epoch [{epoch + 1}/{num_epochs}], Loss: {epoch_loss / len(train_loader)}"
+            self._run_finetune_epoch(
+                train_loader, optimizer, scheduler, ctx, linearprobe, epoch, num_epochs
             )
-            logging.info(f"Training Loss: {epoch_loss / len(train_loader)}")
-
-            if X_val is not None and y_val is not None:
-                validation_loss = self.validate_fit(
-                    X_val,
-                    eX_val,
-                    y_val,
-                    e_y_val=e_y_val,
-                    mini_batch=mini_batch,
-                    linearprobe=linearprobe,
-                    maskft=maskft,
-                    multitask=multitask,
-                    ftlf=ftlf,
-                    rncloss=rncloss,
-                    ftlabeldim=ftlabeldim,
-                    ft_lambda_pred=ft_lambda_pred,
-                    ft_lambda_rec=ft_lambda_rec,
-                    ft_quantile_label_weights=ft_quantile_label_weights,
-                    ft_use_sigma_quantile_weights=ft_use_sigma_quantile_weights,
-                    ft_sigma_weight_floor=ft_sigma_weight_floor,
-                    ft_sigma_weight_normalize_batch=ft_sigma_weight_normalize_batch,
-                    parallax_mle_weight=parallax_mle_weight,
-                    parallax_use_masked_pred=parallax_use_masked_pred,
-                    parallax_label_idx=parallax_label_idx,
-                    parallax_sigma_floor=parallax_sigma_floor,
-                    parallax_sigma_scale=parallax_sigma_scale,
-                    consistency_params=consistency_params,
-                )
-                logging.info(f"Validation Loss: {validation_loss}")
-
-            head_sd = self.lp.state_dict() if linearprobe else self.ft.state_dict()
-            sd_to_save = {
-                "autoencoder_state_dict": self.model.state_dict(),
-                "prediction_head_state_dict": head_sd,
-                "linear_probe": bool(linearprobe),
-                "featurescaler": self.featurescaler,
-                "label_scalers": getattr(self, "label_scalers", None),
-            }
-            torch.save(sd_to_save, self.ft_save_str)
-            if (
-                self.checkpoint_interval is not None
-                and (epoch + 1) % self.checkpoint_interval == 0
-            ):
-                torch.save(
-                    sd_to_save,
-                    self.ft_save_str.split(".")[0]
-                    + "_checkpoint_"
-                    + str(self.checkpoint_interval)
-                    + ".pth",
-                )
+            self._maybe_validate_finetune(
+                X_val=X_val,
+                eX_val=eX_val,
+                y_val=y_val,
+                e_y_val=e_y_val,
+                mini_batch=mini_batch,
+                linearprobe=linearprobe,
+                maskft=maskft,
+                multitask=multitask,
+                ftlf=ftlf,
+                rncloss=rncloss,
+                ftlabeldim=ftlabeldim,
+                ft_lambda_pred=ft_lambda_pred,
+                ft_lambda_rec=ft_lambda_rec,
+                ft_quantile_label_weights=ft_quantile_label_weights,
+                ft_use_sigma_quantile_weights=ft_use_sigma_quantile_weights,
+                ft_sigma_weight_floor=ft_sigma_weight_floor,
+                ft_sigma_weight_normalize_batch=ft_sigma_weight_normalize_batch,
+                parallax_mle_weight=parallax_mle_weight,
+                parallax_use_masked_pred=parallax_use_masked_pred,
+                parallax_label_idx=parallax_label_idx,
+                parallax_sigma_floor=parallax_sigma_floor,
+                parallax_sigma_scale=parallax_sigma_scale,
+                consistency_params=consistency_params,
+            )
+            self._save_finetune_checkpoint(linearprobe, epoch)
 
     def validate_fit(
         self,
