@@ -1,6 +1,9 @@
 from unittest.mock import MagicMock
 
 import numpy as np
+import pytest
+
+pytest.importorskip("torch")
 
 from masked_stellar_autoencoder.training.finetune_msa import _print_parallax_consistency
 

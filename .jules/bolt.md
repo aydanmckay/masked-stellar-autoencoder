@@ -22,6 +22,14 @@
 **Learning:** In PyTorch custom loss functions (like RnCLoss), using Python `for` loops for row-wise contrastive metrics results in slow O(n) execution times and loop overhead. Replacing loops with broadcasting using `.unsqueeze()` transforms the operation into a single vectorized O(1) step, dramatically increasing performance.
 **Action:** When implementing contrastive or pairwise loss functions in PyTorch, always evaluate pairs using multi-dimensional broadcasting (e.g., `tensor.unsqueeze(1) - tensor.unsqueeze(2)`) instead of explicit loops over dimension sizes.
 
+## 2026-05-25 - Avoid data-dependent branching in custom losses
+**Learning:** In PyTorch, conditional branches that evaluate tensor data (e.g., `if mask.sum() == 0:`) force costly Device-to-Host (GPU to CPU) synchronizations, stalling the execution pipeline. This is particularly problematic in tight loops or custom loss functions.
+**Action:** Remove data-dependent conditionals by using unconditionally safe mathematical operations. For example, instead of branching on a zero sum, use `.clamp_min(1)` (or equivalent) in denominators to ensure safe division without blocking CPU-GPU execution.
+
+## 2026-05-13 - Avoid 3D tensor broadcasting in row-wise contrastive losses
+**Learning:** In PyTorch custom loss functions (e.g., `RnCLoss`), vectorizing row-wise contrastive metrics using 3D tensor broadcasting (e.g., `a.unsqueeze(1) >= b.unsqueeze(2)`) creates an O(N^3) memory footprint. While this eliminates Python loops and is faster for small batches, it causes severe Out-Of-Memory errors for larger batches.
+**Action:** Prioritize memory scalability by using efficient `for` loops instead of high-dimensional multi-tensor broadcasting when evaluating pair-wise or row-wise loss components on batches, especially for components like contrastive loss that evaluate every item against every other item.
+
 ## 2026-05-14 - Avoid dynamic boolean indexing in quantile loss
 **Learning:** In PyTorch, using dynamic-shape boolean indexing like `loss[mask].mean()` forces device-to-host synchronization, causing massive slowdowns in tight loops or custom loss functions.
 **Action:** Replace dynamic indexing with full-shape tensor operations like `loss.masked_fill(~mask, 0.0).sum() / mask.sum().clamp_min(1)`. Ensure the mask replacement is out-of-place (e.g. `masked_fill` instead of `masked_fill_`) if in-place modifications trigger autograd errors or undefined behavior in edge cases.

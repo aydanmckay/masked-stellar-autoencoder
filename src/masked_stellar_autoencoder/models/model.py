@@ -124,10 +124,8 @@ class MaskedMSELoss(nn.Module):
         # Compute squared error only where target is not NaN
         masked_error = ((safe_input - safe_target) ** 2).masked_fill_(~mask, 0.0)
 
-        if masked_error.numel() == 0 or mask.sum() == 0:
-            return torch.tensor(0.0, device=input.device, requires_grad=True)
         if self.reduction == "mean":
-            return masked_error.sum() / mask.sum()
+            return masked_error.sum() / mask.sum().clamp_min(1)
         elif self.reduction == "sum":
             return masked_error.sum()
         else:
@@ -155,10 +153,8 @@ class MaskedMAELoss(nn.Module):
         # Compute absolute error only where target is not NaN
         masked_error = torch.abs(safe_input - safe_target).masked_fill_(~mask, 0.0)
 
-        if masked_error.numel() == 0 or mask.sum() == 0:
-            return torch.tensor(0.0, device=input.device, requires_grad=True)
         if self.reduction == "mean":
-            return masked_error.sum() / mask.sum()
+            return masked_error.sum() / mask.sum().clamp_min(1)
         elif self.reduction == "sum":
             return masked_error.sum()
         else:
@@ -250,11 +246,15 @@ class RnCLoss(nn.Module):
         exp_logits = exp_logits[mask].view(n, n - 1)
         label_diffs = label_diffs[mask].view(n, n - 1)
 
-        # ⚡ Bolt: Vectorize operations using `.unsqueeze()` to eliminate the Python loop and achieve O(1) execution time.
-        neg_mask = (label_diffs.unsqueeze(1) >= label_diffs.unsqueeze(2)).float()
-        log_sum_exp = torch.log((neg_mask * exp_logits.unsqueeze(1)).sum(dim=-1))
-        pos_log_probs = logits - log_sum_exp
-        loss = -(pos_log_probs / (n * (n - 1))).sum()
+        loss = 0.0
+        for i in range(n):
+            row_label_diffs = label_diffs[i]
+            row_neg_mask = row_label_diffs.view(1, -1) >= row_label_diffs.view(-1, 1)
+            row_log_sum_exp = torch.log(
+                (row_neg_mask.float() * exp_logits[i].view(1, -1)).sum(dim=1)
+            )
+            row_pos_log_probs = logits[i] - row_log_sum_exp
+            loss = loss - row_pos_log_probs.sum() / (n * (n - 1))
 
         return loss
 
