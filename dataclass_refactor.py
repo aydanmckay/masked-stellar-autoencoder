@@ -1,4 +1,4 @@
-with open("src/masked_stellar_autoencoder/models/model.py", "r") as f:
+with open("src/masked_stellar_autoencoder/models/model.py") as f:
     text = f.read()
 
 # First, add the dataclass at the top of the file if not exists.

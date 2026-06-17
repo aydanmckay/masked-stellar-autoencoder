@@ -1,6 +1,6 @@
 import re
 
-with open("src/masked_stellar_autoencoder/models/model.py", "r") as f:
+with open("src/masked_stellar_autoencoder/models/model.py") as f:
     text = f.read()
 
 helper_code = open("tmp_helpers.py").read()
