@@ -427,9 +427,14 @@ def quantile_loss(
     mask = ~torch.isnan(target)
     target_expanded = target.unsqueeze(2).expand_as(preds)
     quantiles = quantiles.view(1, 1, -1)
-    error = target_expanded - preds
+
+    # ⚡ Bolt: Sanitize NaN targets to 0.0 out-of-place to prevent NaN propagation to gradients
+    mask_expanded = mask.unsqueeze(2).expand_as(preds)
+    safe_target = target_expanded.masked_fill(~mask_expanded, 0.0)
+
+    error = safe_target - preds
     loss = torch.max((quantiles - 1) * error, quantiles * error)
-    mask_expanded = mask.unsqueeze(2).expand_as(loss)
+
     w_eff = mask_expanded.to(dtype=loss.dtype)
     if label_weights is not None:
         w_lab = (
@@ -450,7 +455,10 @@ def quantile_loss(
         return loss.masked_fill(
             ~mask_expanded, 0.0
         ).sum() / mask_expanded.sum().clamp_min(1)
-    return (loss * w_eff).sum() / w_eff.sum().clamp_min(1e-8)
+
+    return (
+        loss.masked_fill(~mask_expanded, 0.0) * w_eff
+    ).sum() / w_eff.sum().clamp_min(1e-8)
 
 
 def _sigma_pinball_weights(
@@ -635,14 +643,21 @@ class TabResnetWrapper(BaseEstimator):
         except ValueError:
             self.parallax_feature_idx = None
 
+    @property
+    def _pert_channel_scale_tensor(self):
+        # ⚡ Bolt: Cache static tensor to prevent repetitive host-to-device transfers and CPU-GPU syncs
+        if not hasattr(self, "_pert_channel_scale_cached"):
+            self._pert_channel_scale_cached = torch.as_tensor(
+                self._pert_channel_scale_np,
+                device=self.device,
+                dtype=torch.float32,
+            )
+        return self._pert_channel_scale_cached
+
     def _pert_noise(self, X_batch: Tensor, eX_batch: Tensor) -> Tensor:
         """Gaussian noise scaled by per-feature errors and ``pert_channel_scale``."""
         noise = torch.randn_like(X_batch) * eX_batch * self.pert_scale
-        w = torch.as_tensor(
-            self._pert_channel_scale_np,
-            device=X_batch.device,
-            dtype=noise.dtype,
-        )
+        w = self._pert_channel_scale_tensor.to(device=X_batch.device, dtype=noise.dtype)
         if w.dim() != 1 or w.shape[0] != X_batch.shape[1]:
             raise RuntimeError("pert_channel_scale length must match feature dimension")
         return noise * w.unsqueeze(0)
@@ -1192,13 +1207,20 @@ class TabResnetWrapper(BaseEstimator):
             parallax_masked[:, indicator_idx] = 1.0
         return parallax_masked
 
+    @property
+    def _quantiles_tensor(self):
+        # ⚡ Bolt: Cache static tensor to prevent repetitive host-to-device transfers and CPU-GPU syncs
+        if not hasattr(self, "_quantiles_cached"):
+            self._quantiles_cached = torch.tensor([0.16, 0.5, 0.84], device=self.device)
+        return self._quantiles_cached
+
     def _compute_base_loss(self, y_batch, y_head, batch, ctx: FinetuneContext):
         if ctx.ftlf in ("wmse", "wgnll"):
             return ctx.criterion(y_batch, y_head, 1 / (batch[3] + 1e-5) ** 2)
         elif ctx.ftlf in ("mse", "mae"):
             return ctx.criterion(y_batch, y_head)
         elif ctx.ftlf == "quantile":
-            quantiles = torch.tensor([0.16, 0.5, 0.84], device=self.device)
+            quantiles = self._quantiles_tensor
             sw = (
                 _sigma_pinball_weights(
                     batch[3],
@@ -1244,9 +1266,15 @@ class TabResnetWrapper(BaseEstimator):
         mle_mask = (
             (~torch.isnan(mu_phot)) & (~torch.isnan(pi_gaia)) & (~torch.isnan(var))
         )
-        if mle_mask.any():
-            return (((mu_phot - pi_gaia) ** 2) / (var + 1e-8))[mle_mask].mean()
-        return 0
+
+        # ⚡ Bolt: Replace dynamic boolean indexing with nan_to_num and masked_fill to avoid CPU-GPU syncs
+        safe_mu_phot = torch.nan_to_num(mu_phot, nan=0.0)
+        safe_pi_gaia = torch.nan_to_num(pi_gaia, nan=0.0)
+        safe_var = torch.nan_to_num(var, nan=1.0)
+
+        return (((safe_mu_phot - safe_pi_gaia) ** 2) / (safe_var + 1e-8)).masked_fill(
+            ~mle_mask, 0.0
+        ).sum() / mle_mask.sum().clamp_min(1)
 
     def _apply_parallax_masked_forward(
         self, X_masked, y_batch, y_raw, ctx: FinetuneContext

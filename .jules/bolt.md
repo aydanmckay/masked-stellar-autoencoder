@@ -33,3 +33,15 @@
 ## 2026-05-14 - Avoid dynamic boolean indexing in quantile loss
 **Learning:** In PyTorch, using dynamic-shape boolean indexing like `loss[mask].mean()` forces device-to-host synchronization, causing massive slowdowns in tight loops or custom loss functions.
 **Action:** Replace dynamic indexing with full-shape tensor operations like `loss.masked_fill(~mask, 0.0).sum() / mask.sum().clamp_min(1)`. Ensure the mask replacement is out-of-place (e.g. `masked_fill` instead of `masked_fill_`) if in-place modifications trigger autograd errors or undefined behavior in edge cases.
+
+## 2026-05-26 - PyTorch Static Tensor Creation in High-Frequency Loops
+**Learning:** Repetitively creating static PyTorch tensors (e.g., `torch.tensor([0.16, 0.5, 0.84], device=device)` or `torch.as_tensor(...)`) inside high-frequency batch loops (like custom loss functions or noise injection routines) introduces hidden but significant performance overhead due to CPU-to-GPU memory transfers and CPU-GPU synchronization.
+**Action:** Always eagerly instantiate and cache static constant tensors as class properties or attributes, and reuse the cached tensor during batch iterations.
+
+## 2026-05-27 - NaN propagation during backward pass from masked values
+**Learning:** When using out-of-place mask filling to avoid dynamic boolean indexing, if a tensor contains NaNs (like `target`), calculating intermediate variables (e.g., `error = target - preds`) *before* applying the mask will result in NaNs flowing backward into the gradients, even if the forward loss is correctly masked.
+**Action:** Always sanitize tensors containing potential NaNs using `.masked_fill(~mask, 0.0)` *before* any mathematical operations are applied to them, to prevent NaN gradient propagation.
+
+## 2025-05-26 - Optimize Parallax MLE Loss
+**Learning:** Dynamic boolean indexing in the parallax MLE loss calculation (`[mle_mask].mean()`) creates CPU-GPU sync overhead, just like in the general loss functions.
+**Action:** Replaced dynamic boolean indexing with `nan_to_num` for sanitization and `masked_fill(~mle_mask, 0.0)` followed by a sum reduction to avoid CPU-GPU syncs.
