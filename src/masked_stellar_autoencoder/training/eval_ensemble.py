@@ -169,7 +169,7 @@ def _mask_xp_columns(x: np.ndarray, xp_lo: int = 5, xp_hi: int = 115) -> np.ndar
 def _feature_batch_tensor(chunk: np.ndarray, device: torch.device) -> torch.Tensor:
     """Contiguous float32 batch on device with NaN sentinel for the encoder."""
     arr = np.ascontiguousarray(chunk, dtype=np.float32)
-    xb = torch.from_numpy(arr).to(device, non_blocking=device.type == "cuda")
+    xb = torch.as_tensor(arr, device=device)
     return torch.nan_to_num(xb, nan=-9999.0)
 
 

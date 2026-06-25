@@ -49,14 +49,15 @@ class MaskedGaussianNLLLoss(nn.Module):
             )
 
         # ⚡ Bolt: Use .masked_fill instead of boolean indexing for performance
-        safe_pred_mean = pred_mean.masked_fill(~mask, 0.0)
         safe_target = target.masked_fill(~mask, 0.0)
 
         var = pred_var.clamp(min=self.eps).masked_fill_(~mask, 1.0)
         obs_var = target_var.clamp(min=self.eps).masked_fill_(~mask, 1.0)
 
         err = var + obs_var
-        diff_squared = (safe_pred_mean - safe_target) ** 2
+        diff = pred_mean - safe_target
+        diff.masked_fill_(~mask, 0.0)
+        diff_squared = diff**2
 
         # Compute Gaussian NLL
         nll = 0.5 * (torch.log(err) + (diff_squared / err)) + 0.5 * math.log(
@@ -89,11 +90,13 @@ class WeightedMaskedMSELoss(nn.Module):
             return ((masked_input - masked_target) ** 2) * masked_weights
 
         # ⚡ Bolt: Use .masked_fill instead of boolean indexing for performance
-        safe_input = input.masked_fill(~mask, 0.0)
         safe_target = target.masked_fill(~mask, 0.0)
         safe_weights = weight.masked_fill(~mask, 0.0)
 
-        masked_error = ((safe_input - safe_target) ** 2) * safe_weights
+        diff = input - safe_target
+        diff.masked_fill_(~mask, 0.0)
+
+        masked_error = (diff**2) * safe_weights
 
         if self.reduction == "mean":
             return masked_error.sum() / (safe_weights.sum() + self.eps)
@@ -118,11 +121,11 @@ class MaskedMSELoss(nn.Module):
             return (masked_input - masked_target) ** 2
 
         # ⚡ Bolt: Use .masked_fill instead of boolean indexing for performance
-        safe_input = input.masked_fill(~mask, 0.0)
         safe_target = target.masked_fill(~mask, 0.0)
 
         # Compute squared error only where target is not NaN
-        masked_error = ((safe_input - safe_target) ** 2).masked_fill_(~mask, 0.0)
+        diff = input - safe_target
+        masked_error = diff.masked_fill_(~mask, 0.0) ** 2
 
         if self.reduction == "mean":
             return masked_error.sum() / mask.sum().clamp_min(1)
@@ -147,11 +150,11 @@ class MaskedMAELoss(nn.Module):
             return torch.abs(masked_input - masked_target)
 
         # ⚡ Bolt: Use .masked_fill instead of boolean indexing for performance
-        safe_input = input.masked_fill(~mask, 0.0)
         safe_target = target.masked_fill(~mask, 0.0)
 
         # Compute absolute error only where target is not NaN
-        masked_error = torch.abs(safe_input - safe_target).masked_fill_(~mask, 0.0)
+        diff = input - safe_target
+        masked_error = torch.abs(diff.masked_fill_(~mask, 0.0))
 
         if self.reduction == "mean":
             return masked_error.sum() / mask.sum().clamp_min(1)
@@ -777,7 +780,9 @@ class TabResnetWrapper(BaseEstimator):
             if np.any(np.isnan(eX)) or np.any(np.isinf(eX)):
                 print(f"Warning: Invalid values in errors for key '{key}'")
 
-            return torch.Tensor(X).to(self.device), torch.Tensor(eX).to(self.device)
+            return torch.as_tensor(
+                X, device=self.device, dtype=torch.float32
+            ), torch.as_tensor(eX, device=self.device, dtype=torch.float32)
 
         except Exception as e:
             raise RuntimeError(f"Error loading data for key '{key}': {e}")
@@ -1480,7 +1485,7 @@ class TabResnetWrapper(BaseEstimator):
         self, X_train, eX_train, y_train, e_y_train, mini_batch
     ):
         tensors = [
-            torch.Tensor(arr).to(self.device)
+            torch.as_tensor(arr, device=self.device, dtype=torch.float32)
             for arr in (X_train, eX_train, y_train, e_y_train)
         ]
         dataset = TensorDataset(*tensors)
@@ -1771,12 +1776,12 @@ class TabResnetWrapper(BaseEstimator):
 
         val_loss = 0
         X_val, eX_val = (
-            torch.Tensor(X_val).to(self.device),
-            torch.Tensor(eX_val).to(self.device),
+            torch.as_tensor(X_val, device=self.device, dtype=torch.float32),
+            torch.as_tensor(eX_val, device=self.device, dtype=torch.float32),
         )
         y_val, e_y_val = (
-            torch.Tensor(y_val).to(self.device),
-            torch.Tensor(e_y_val).to(self.device),
+            torch.as_tensor(y_val, device=self.device, dtype=torch.float32),
+            torch.as_tensor(e_y_val, device=self.device, dtype=torch.float32),
         )
         rdataset = TensorDataset(X_val, eX_val, y_val, e_y_val)
         val_loader = DataLoader(rdataset, batch_size=mini_batch, shuffle=True)
