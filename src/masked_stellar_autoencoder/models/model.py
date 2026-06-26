@@ -689,14 +689,14 @@ class TabResnetWrapper(BaseEstimator):
 
         # get NaN locations
         nan_mask = ~torch.isnan(X_masked)
-        X_masked[~nan_mask] = -9999
+
+        # ⚡ Bolt: Consolidate multiple zeros_like allocations into a single combined_mask tensor
+        combined_mask = torch.zeros_like(X, dtype=torch.bool, device=self.device)
 
         # row-wise masking for cols [5:115] - XP coeffs
         num_rows_to_mask = int(self.xp_masking_ratio * X.shape[0])
         row_indices = torch.randperm(X.shape[0], device=self.device)[:num_rows_to_mask]
-
-        mask_fixed = torch.zeros_like(X, dtype=torch.bool, device=self.device)
-        mask_fixed[row_indices, col_start_fixed:col_end_fixed] = True
+        combined_mask[row_indices, col_start_fixed:col_end_fixed] = True
 
         # Extra rows with XP fully masked (mixture component toward XP-off at inference).
         mf = getattr(self, "mask_mixture_xp_full_frac", 0.0) or 0.0
@@ -704,27 +704,21 @@ class TabResnetWrapper(BaseEstimator):
             n_add = int(mf * X.shape[0])
             if n_add > 0:
                 add_idx = torch.randperm(X.shape[0], device=self.device)[:n_add]
-                mask_fixed[add_idx, col_start_fixed:col_end_fixed] = True
+                combined_mask[add_idx, col_start_fixed:col_end_fixed] = True
 
         # random element-wise masking for cols [0:5] and [115:] - phot bands
-        mask_random = torch.zeros_like(X, dtype=torch.bool, device=self.device)
-
-        # mask [0:5] - W1, W2, G, BP, RP
-        mask_random[:, :col_start_fixed] = (
-            torch.rand(X[:, :col_start_fixed].shape, device=self.device)
+        # ⚡ Bolt: Assign rand values directly to slices of combined_mask to avoid allocating intermediate mask_random tensor
+        combined_mask[:, :col_start_fixed] = (
+            torch.rand(X.shape[0], col_start_fixed, device=self.device)
             < self.m_masking_ratio
         )
-        # mask [115:] - all other phot
-        mask_random[:, col_start_random:] = (
-            torch.rand(X[:, col_start_random:].shape, device=self.device)
+        combined_mask[:, col_start_random:] = (
+            torch.rand(X.shape[0], X.shape[1] - col_start_random, device=self.device)
             < self.m_masking_ratio
         )
 
         # apply masks
-        X_masked[mask_fixed | mask_random] = -9999
-
-        # combined mask
-        combined_mask = mask_fixed | mask_random
+        X_masked.masked_fill_(~nan_mask | combined_mask, -9999)
 
         return X_masked, combined_mask, nan_mask
 

@@ -53,3 +53,7 @@
 ## 2026-06-03 - Avoid `torch.Tensor(x).to(device)` for initial allocation
 **Learning:** Using `torch.Tensor(x).to(device)` or `torch.from_numpy(x).to(device)` to allocate inputs on a GPU creates an intermediate CPU tensor first and incurs a CPU-GPU transfer overhead.
 **Action:** Always instantiate tensors directly on the target device using `torch.as_tensor(x, device=device)` or `torch.tensor(x, device=device)`. This prevents redundant memory allocations and CPU-GPU synchronization overhead.
+
+## 2026-06-26 - Avoid multiple intermediate boolean tensor allocations in high-frequency batch loops
+**Learning:** Creating multiple intermediate boolean tensors (like `mask_random` and `mask_fixed`) during high-frequency data augmentation steps causes unnecessary memory allocation overhead.
+**Action:** Pre-allocate a single combined boolean tensor and assign values directly to its slices instead of allocating multiple intermediate masks and combining them with bitwise operators.
