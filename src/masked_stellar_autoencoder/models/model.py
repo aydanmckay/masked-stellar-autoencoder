@@ -254,7 +254,11 @@ class RnCLoss(nn.Module):
             row_label_diffs = label_diffs[i]
             row_neg_mask = row_label_diffs.view(1, -1) >= row_label_diffs.view(-1, 1)
             row_log_sum_exp = torch.log(
-                (row_neg_mask.float() * exp_logits[i].view(1, -1)).sum(dim=1)
+                exp_logits[i]
+                .view(1, -1)
+                .expand_as(row_neg_mask)
+                .masked_fill(~row_neg_mask, 0.0)
+                .sum(dim=1)
             )
             row_pos_log_probs = logits[i] - row_log_sum_exp
             loss = loss - row_pos_log_probs.sum() / (n * (n - 1))
@@ -438,6 +442,13 @@ def quantile_loss(
     error = safe_target - preds
     loss = torch.max((quantiles - 1) * error, quantiles * error)
 
+    if label_weights is None and sample_weight is None:
+        # ⚡ Bolt: Replace dynamic boolean indexing with out-of-place masked_fill for ~2x faster execution and lower memory usage
+        return loss.masked_fill(
+            ~mask_expanded, 0.0
+        ).sum() / mask_expanded.sum().clamp_min(1)
+
+    # ⚡ Bolt: Delay allocation of float mask tensor until after unweighted fast-path
     w_eff = mask_expanded.to(dtype=loss.dtype)
     if label_weights is not None:
         w_lab = (
@@ -453,11 +464,6 @@ def quantile_loss(
             .expand_as(loss)
         )
         w_eff = w_eff * w_s
-    if label_weights is None and sample_weight is None:
-        # ⚡ Bolt: Replace dynamic boolean indexing with out-of-place masked_fill for ~2x faster execution and lower memory usage
-        return loss.masked_fill(
-            ~mask_expanded, 0.0
-        ).sum() / mask_expanded.sum().clamp_min(1)
 
     return (
         loss.masked_fill(~mask_expanded, 0.0) * w_eff
