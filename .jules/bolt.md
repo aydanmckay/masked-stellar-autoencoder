@@ -65,3 +65,7 @@
 ## 2026-06-27 - Delay unneeded float tensor allocations in loss function fast-paths
 **Learning:** In PyTorch, allocating a full-batch float mask tensor (e.g., `mask.to(dtype=loss.dtype)`) unconditionally before a fast-path early return creates significant memory allocation overhead, even when weights are unused.
 **Action:** Always move conditional fast-paths that do not require weights (e.g., `if label_weights is None and sample_weight is None: return ...`) *above* the instantiation of such float tensors to prevent unnecessary memory allocations and improve execution speed.
+
+## 2026-06-28 - PyTorch Implicit Memory Allocation with .to() before sum()
+**Learning:** In PyTorch custom loss functions (e.g., `EncoderDecoderLoss`), casting a full-shape boolean mask to float before calculating the sum (`mask.to(dtype).sum()`) introduces unnecessary implicit memory allocation for the intermediate float tensor. By delaying this `.to()` cast until *after* the sum, we save memory and compute time per loop execution. However, PyTorch will raise a `RuntimeError` if you attempt to call `.clamp_min(float_val)` directly on the resulting `int64` tensor.
+**Action:** Always call `.sum()` directly on boolean tensors to avoid allocating a full-sized float mask. Then, explicitly cast the scalar/reduced integer result to float *before* calling `.clamp_min()` or other float-bound operations (e.g., `mask.sum().to(dtype).clamp_min(1e-9)`).

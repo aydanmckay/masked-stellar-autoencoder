@@ -376,7 +376,8 @@ class EncoderDecoderLoss(nn.Module):
 
         # Mean squared (or absolute) error over masked elements only — avoids
         # per-column divisors that up-weight rarely masked features in a batch.
-        denom = mask.to(dtype=reconstruction_errors.dtype).sum().clamp_min(self.eps)
+        # ⚡ Bolt: Avoid allocating a new float tensor for the mask before summing, but cast to float before clamp_min
+        denom = mask.sum().to(dtype=reconstruction_errors.dtype).clamp_min(self.eps)
         loss = reconstruction_errors.sum() / denom
 
         return loss
@@ -449,21 +450,21 @@ def quantile_loss(
         ).sum() / mask_expanded.sum().clamp_min(1)
 
     # ⚡ Bolt: Delay allocation of float mask tensor until after unweighted fast-path
-    w_eff = mask_expanded.to(dtype=loss.dtype)
+    # ⚡ Bolt: Avoid allocating full-shape w_eff if possible and apply masking directly
+    w_eff = None
     if label_weights is not None:
-        w_lab = (
-            label_weights.to(device=loss.device, dtype=loss.dtype)
-            .view(1, -1, 1)
-            .expand_as(loss)
-        )
-        w_eff = w_eff * w_lab
+        w_lab = label_weights.to(device=loss.device, dtype=loss.dtype).view(1, -1, 1)
+        w_eff = w_lab
     if sample_weight is not None:
-        w_s = (
-            sample_weight.to(device=loss.device, dtype=loss.dtype)
-            .unsqueeze(2)
-            .expand_as(loss)
-        )
-        w_eff = w_eff * w_s
+        w_s = sample_weight.to(device=loss.device, dtype=loss.dtype).unsqueeze(2)
+        w_eff = w_s if w_eff is None else w_eff * w_s
+
+    if w_eff is None:
+        # Fallback if unweighted path is somehow skipped
+        w_eff = mask_expanded.to(dtype=loss.dtype)
+    else:
+        # Mask the weights so invalid entries don't contribute to the denominator
+        w_eff = w_eff.expand_as(loss).masked_fill(~mask_expanded, 0.0)
 
     return (
         loss.masked_fill(~mask_expanded, 0.0) * w_eff
