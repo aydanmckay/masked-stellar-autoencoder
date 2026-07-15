@@ -14,7 +14,7 @@ from sklearn.base import BaseEstimator
 from torch import Tensor
 from torch.utils.data import DataLoader, TensorDataset
 
-from .blocks import TabResnet
+from .blocks import TabDenseNet, TabResnet
 from .checkpoint_load import torch_load_trusted
 
 
@@ -330,7 +330,12 @@ class EncoderDecoderLoss(nn.Module):
         self.cost = lf
 
     def forward(
-        self, x_true: Tensor, x_pred: Tensor, mask: Tensor, w: Tensor
+        self,
+        x_true: Tensor,
+        x_pred: Tensor,
+        mask: Tensor,
+        w: Tensor,
+        logvar: Tensor | None = None,
     ) -> Tensor:
         r"""
         Parameters
@@ -373,6 +378,11 @@ class EncoderDecoderLoss(nn.Module):
                     "Weight tensor w is required for wmae loss but got None"
                 )
             reconstruction_errors = w * abs(errors)
+        elif self.cost == "gnll":
+            if logvar is None:
+                raise ValueError("logvar required for gnll loss")
+            lv = logvar.masked_fill_(~mask.bool(), 0.0)
+            reconstruction_errors = 0.5 * (lv + errors**2 / (lv.exp() + self.eps))
 
         # Mean squared (or absolute) error over masked elements only — avoids
         # per-column divisors that up-weight rarely masked features in a batch.
@@ -628,6 +638,9 @@ class TabResnetWrapper(BaseEstimator):
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         self.model.to(self.device)
         self.loss_fn = EncoderDecoderLoss(lf=lf)
+        # Non-gnll loss for multitask reconstruction (gnll requires logvar which
+        # the finetune multitask path does not provide).
+        self._rec_loss_fn = EncoderDecoderLoss(lf=lf if lf != "gnll" else "mse")
         self.latent_size = latent_size
         self.lasso = lasso
         self.wd = wd
@@ -918,12 +931,15 @@ class TabResnetWrapper(BaseEstimator):
     ):
         reconstruction_mask = mask[:, : -self.diff] & nanmask[:, : -self.diff]
         reconstruction_w = 1.0 / (eX_batch[:, : -self.diff] ** 2 + 1e-8)
+
+        logvar = getattr(self.model, "_last_logvar", None)
         return (
             self.loss_fn(
                 X_batch[:, : -self.diff],
                 X_reconstructed,
                 reconstruction_mask,
                 reconstruction_w,
+                logvar=logvar,
             )
             + self.lasso * z.abs().sum()
         )
@@ -1106,11 +1122,13 @@ class TabResnetWrapper(BaseEstimator):
                     reconstruction_mask = (
                         mask[:, : -self.diff] & nanmask[:, : -self.diff]
                     )
+                    logvar = getattr(self.model, "_last_logvar", None)
                     batch_loss = self.loss_fn(
                         X_batch[:, : -self.diff],
                         X_reconstructed,
                         reconstruction_mask,
                         1.0 / (eX_batch[:, : -self.diff] ** 2 + 1e-8),
+                        logvar=logvar,
                     )
 
                     val_loss += batch_loss.item()
@@ -1357,7 +1375,7 @@ class TabResnetWrapper(BaseEstimator):
         if ctx.multitask:
             reconstruction_mask = mask[:, : -self.diff] & nanmask[:, : -self.diff]
             reconstruction_w = 1.0 / (eX_batch[:, : -self.diff] ** 2 + 1e-8)
-            rec = self.loss_fn(
+            rec = self._rec_loss_fn(
                 X_batch[:, : -self.diff],
                 X_reconstructed,
                 reconstruction_mask,
@@ -1680,6 +1698,7 @@ class TabResnetWrapper(BaseEstimator):
         parallax_sigma_floor: float = 0.0,
         parallax_sigma_scale: float = 1.0,
         consistency_params: dict | None = None,
+        ft_encoder_warmup_epochs: int = 0,
     ):
         train_loader = self._prepare_finetune_loader(
             X_train, eX_train, y_train, e_y_train, mini_batch
@@ -1729,7 +1748,25 @@ class TabResnetWrapper(BaseEstimator):
             random.seed(feature_seed)
             torch.manual_seed(feature_seed)
 
+        # Encoder warmup: freeze encoder for first N epochs, then unfreeze
+        if ft_encoder_warmup_epochs > 0 and not linearprobe:
+            for p in self.model.encoder.parameters():
+                p.requires_grad = False
+            print(f"Encoder frozen for warmup ({ft_encoder_warmup_epochs} epochs)")
+
         for epoch in range(num_epochs):
+            # Unfreeze encoder at warmup boundary and rebuild optimizer
+            if (
+                ft_encoder_warmup_epochs > 0
+                and not linearprobe
+                and epoch == ft_encoder_warmup_epochs
+            ):
+                for p in self.model.encoder.parameters():
+                    p.requires_grad = True
+                optimizer, scheduler = self._setup_finetune_optimizer(
+                    linearprobe, ftopt, ftlr, ftl2, enc_lr, head_lambda, encoder_lambda
+                )
+                print("Encoder unfrozen after warmup, optimizer rebuilt")
             self._run_finetune_epoch(
                 train_loader, optimizer, scheduler, ctx, linearprobe, epoch, num_epochs
             )
@@ -1838,7 +1875,18 @@ class TabResnetWrapper(BaseEstimator):
 
 
 def make_model(
-    input_dim, layer_dims, output_dim, active, rtdl_embed_dim, norm, decoder_dims=None
+    input_dim,
+    layer_dims,
+    output_dim,
+    active,
+    rtdl_embed_dim,
+    norm,
+    decoder_dims=None,
+    encoder_type="resnet",
+    growth_rate=64,
+    num_dense_layers=8,
+    cosine_latent=False,
+    heteroscedastic=False,
 ):
     """
     Helper function to make the MSA in the same file as the wrapper
@@ -1858,15 +1906,47 @@ def make_model(
     decoder_dims :: list, optional
         Decoder dimensions. If None, uses symmetric (mirrored) encoder dimensions.
         For asymmetric decoder, specify custom dimensions (e.g., [256, 512, 1024])
+    encoder_type : str
+        'resnet' (default) or 'dense' for DenseNet with concatenation skip connections.
+    growth_rate : int
+        DenseNet growth rate (only used when encoder_type='dense').
+    num_dense_layers : int
+        Number of dense layers per block (only used when encoder_type='dense').
+    cosine_latent : bool
+        L2-normalize the latent space.
+    heteroscedastic : bool
+        Decoder outputs (mean, logvar) for gnll pretraining loss.
     """
+    latent_size = layer_dims[-1]
 
-    model = TabResnet(
-        continuous_cols=input_dim,
-        blocks_dims=layer_dims,
-        output_cols=output_dim,
-        active=active,
-        d_embedding=rtdl_embed_dim,
-        norm=norm,
-        decoder_dims=decoder_dims,
-    )
+    if encoder_type == "dense":
+        model = TabDenseNet(
+            continuous_cols=input_dim,
+            latent_size=latent_size,
+            output_cols=output_dim,
+            growth_rate=growth_rate,
+            num_layers=num_dense_layers,
+            d_embedding=rtdl_embed_dim,
+            active=active,
+            norm=norm,
+            cosine_latent=cosine_latent,
+            heteroscedastic=heteroscedastic,
+        )
+    elif encoder_type == "resnet":
+        model = TabResnet(
+            continuous_cols=input_dim,
+            blocks_dims=layer_dims,
+            output_cols=output_dim,
+            active=active,
+            d_embedding=rtdl_embed_dim,
+            norm=norm,
+            decoder_dims=decoder_dims,
+            cosine_latent=cosine_latent,
+            heteroscedastic=heteroscedastic,
+        )
+    else:
+        raise ValueError(
+            f"Unknown encoder_type {encoder_type!r}; expected 'resnet' or 'dense'"
+        )
+
     return model

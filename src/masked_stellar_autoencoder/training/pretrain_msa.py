@@ -73,6 +73,11 @@ def main():
         d_embed,
         norm,
         decoder_dims=decoder_dims,
+        encoder_type=config["model"].get("encoder_type", "resnet"),
+        growth_rate=config["model"].get("growth_rate", 64),
+        num_dense_layers=config["model"].get("num_dense_layers", 8),
+        cosine_latent=config["model"].get("cosine_latent", False),
+        heteroscedastic=config["training"].get("heteroscedastic", False),
     )
 
     xp_ratio = config["training"]["xp_masking_ratio"]

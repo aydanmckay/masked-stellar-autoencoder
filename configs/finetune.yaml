@@ -49,6 +49,13 @@ model:
   rtdl_embed: 16
   # decoder_dims: [256, 512, 1024]  # Optional: asymmetric decoder (default: mirrors encoder)
   saved_weights: '/arc/home/aydanmckay/bprp_mae/.model_instances/checkpoint_60_fullmodelrealmags0605.pth'
+  # Architecture: 'resnet' (addition skips) or 'dense' (concatenation skips)
+  encoder_type: 'resnet'
+  # DenseNet options (only used when encoder_type: 'dense')
+  growth_rate: 64
+  num_dense_layers: 8
+  # L2-normalize the latent space
+  cosine_latent: false
 
 training:
   xp_masking_ratio: 0.9
@@ -117,6 +124,8 @@ finetuning:
   quantile_sigma_weight_floor: 1.0e-6
   quantile_sigma_weight_max: 1.0e6
   quantile_sigma_weight_normalize_batch: true
+  # Encoder warmup: freeze encoder for first N epochs, then unfreeze
+  encoder_warmup_epochs: 0
   # Optional: confident labels + preserve rare [Fe/H] in splits; enable for VMP-focused training
   metal_poor:
     stratify_feh: false

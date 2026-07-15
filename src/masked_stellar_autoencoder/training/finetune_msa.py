@@ -63,6 +63,11 @@ def _finetune_one_seed(
         config["model"]["rtdl_embed"],
         config["model"]["norm"],
         decoder_dims=config["model"].get("decoder_dims", None),
+        encoder_type=config["model"].get("encoder_type", "resnet"),
+        growth_rate=config["model"].get("growth_rate", 64),
+        num_dense_layers=config["model"].get("num_dense_layers", 8),
+        cosine_latent=config["model"].get("cosine_latent", False),
+        heteroscedastic=config["training"].get("heteroscedastic", False),
     )
 
     checkpoint = torch_load_trusted(
@@ -166,6 +171,9 @@ def _finetune_one_seed(
         ),
         ft_scheduler_head_step_epochs=int(
             config["finetuning"].get("lr_scheduler_head_step_epochs", 10)
+        ),
+        ft_encoder_warmup_epochs=int(
+            config["finetuning"].get("encoder_warmup_epochs", 0)
         ),
     )
 

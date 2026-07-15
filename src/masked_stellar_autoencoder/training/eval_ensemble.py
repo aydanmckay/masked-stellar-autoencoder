@@ -163,6 +163,51 @@ def _metrics_block(y_true: np.ndarray, y_pred: np.ndarray, names: list) -> dict:
     return block
 
 
+def _calibration_metrics(
+    y_true: np.ndarray,
+    y_quantiles: np.ndarray,
+    names: list,
+) -> dict:
+    """Calibration metrics from ensemble quantile predictions.
+
+    Parameters
+    ----------
+    y_true : (N, L) ground truth in physical units.
+    y_quantiles : (N, L, 3) ensemble-median quantiles [lower, median, upper].
+    names : label names.
+
+    Returns dict with per-label coverage, bias, and outlier fraction.
+    """
+    block = {}
+    for i, name in enumerate(names):
+        m = np.isfinite(y_true[:, i]) & np.isfinite(y_quantiles[:, i, 1])
+        if m.sum() < 5:
+            block[name] = {"n": int(m.sum())}
+            continue
+        yt = y_true[m, i]
+        ymed = y_quantiles[m, i, 1]
+        lo = y_quantiles[m, i, 0]
+        hi = y_quantiles[m, i, 2]
+        inside = (yt >= lo) & (yt <= hi)
+        bias = float(np.nanmedian(ymed - yt))
+        mad = _nmad(ymed - yt)
+        sigma_est = mad / 0.6745  # robust σ estimate
+        outlier_frac = (
+            float(np.nanmean(np.abs(yt - ymed) > 3 * sigma_est))
+            if sigma_est > 0
+            else 0.0
+        )
+        block[name] = {
+            "n": int(m.sum()),
+            "coverage_1sigma": float(np.nanmean(inside)),
+            "bias": bias,
+            "IQR": float(np.nanmedian(hi - lo)),
+            "NMAD": mad,
+            "outlier_frac_3sigma": outlier_frac,
+        }
+    return block
+
+
 def _mask_xp_columns(x: np.ndarray, feature_cols: list) -> np.ndarray:
     """Mask XP coefficient columns (bp_*/rp_*) with NaN for XP-off evaluation."""
     xp_indices = [
@@ -399,6 +444,35 @@ def main():
         "bins_feh_xp_on": {},
         "bins_feh_xp_off": {},
     }
+
+    # Calibration metrics from ensemble quantiles (XP-on)
+    if not ensemble_linear:
+        ens_q_on = _ensemble_median_predictions(
+            model,
+            head,
+            loaded_states,
+            X_test,
+            device,
+            args.batch_size,
+            linear_probe=False,
+            return_full_quantiles=True,
+        )
+        phys_q_on = _inverse_quantile_block(ens_q_on, scalers, pack)
+        out["calibration_xp_on"] = _calibration_metrics(y_phys, phys_q_on, label_names)
+        ens_q_off = _ensemble_median_predictions(
+            model,
+            head,
+            loaded_states,
+            X_off,
+            device,
+            args.batch_size,
+            linear_probe=False,
+            return_full_quantiles=True,
+        )
+        phys_q_off = _inverse_quantile_block(ens_q_off, scalers, pack)
+        out["calibration_xp_off"] = _calibration_metrics(
+            y_phys, phys_q_off, label_names
+        )
 
     feh_true = y_phys[:, 2]
     for lo, hi, tag in [
