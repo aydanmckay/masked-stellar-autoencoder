@@ -3,25 +3,14 @@
 # Run from your laptop after canfar_setup.sh has completed.
 set -euo pipefail
 
-SCRATCH_BASE="/scratch/msa-pretrain"
-
-canfar login cadc --dev
+canfar login cadc --dev || true
 canfar server use staging
 
 # ── Training session (headless, GPU) ──
 echo "Launching training session (16 cores, 64 GB, 1 GPU)..."
 canfar create -n msa-pretrain -c 16 -m 64 -g 1 \
   headless astroai/webterm:latest \
-  -- bash -c '
-    set -euo pipefail
-    source /etc/astroai-lab/profile.sh
-    cd /srcdir/masked-stellar-autoencoder
-    astroai-lab resume msa-gpu
-    pixi install -e gpu
-    mkdir -p '"$SCRATCH_BASE"'/checkpoints
-    nvidia-smi || true
-    pixi run python -u training/pretrain_msa.py --config configs/pretrain.canfar.yaml
-  '
+  -- bash -c 'cd /srcdir/masked-stellar-autoencoder && bash scripts/canfar_remote_train.sh'
 
 TRAIN_ID=$(canfar ps -q -n msa-pretrain | head -1)
 
