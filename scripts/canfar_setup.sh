@@ -12,11 +12,11 @@ canfar login cadc --dev
 canfar server use staging
 
 echo "Creating setup session (CPU-only, for environment install + data staging)..."
-SETUP_ID=$(canfar create --name msa-setup --json \
-  --cpu 8 --memory 32 \
+canfar create -n msa-setup -c 8 -m 32 \
   headless astroai/webterm:latest \
   -- bash -c '
     set -euo pipefail
+    source /etc/astroai-lab/profile.sh
 
     # Clone repo
     cd /srcdir
@@ -44,8 +44,10 @@ SETUP_ID=$(canfar create --name msa-setup --json \
     astroai-lab data stage '"$DATA_SRC"' '"$SCRATCH_BASE"'/data.h5
 
     echo "=== SETUP COMPLETE ==="
-  ')
+  '
 
+SETUP_ID=$(canfar ps -q -n msa-setup | head -1)
+echo ""
 echo "Setup session: $SETUP_ID"
 echo "Monitor progress: canfar logs $SETUP_ID"
 echo "Wait for '=== SETUP COMPLETE ===' before running canfar_launch.sh"
