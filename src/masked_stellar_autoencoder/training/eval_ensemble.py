@@ -389,6 +389,11 @@ def main():
         config["model"]["rtdl_embed"],
         config["model"]["norm"],
         decoder_dims=config["model"].get("decoder_dims"),
+        encoder_type=config["model"].get("encoder_type", "resnet"),
+        growth_rate=config["model"].get("growth_rate", 64),
+        num_dense_layers=config["model"].get("num_dense_layers", 8),
+        cosine_latent=config["model"].get("cosine_latent", False),
+        heteroscedastic=config["training"].get("heteroscedastic", False),
     ).to(device)
     act = config["finetuning"].get("active", "relu")
     if act == "relu":

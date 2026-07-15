@@ -129,8 +129,10 @@ class TabResnetEncoder(nn.Module):
         d_embedding=8,
         active="elu",
         norm="batch",
+        cosine_latent: bool = False,
     ):
         super().__init__()
+        self.cosine_latent = cosine_latent
 
         input_dim = continuous_cols  # Length of the data, e.g., 153
         self.encoder = DenseResnet(
@@ -143,7 +145,10 @@ class TabResnetEncoder(nn.Module):
         )
 
     def forward(self, x):
-        return self.encoder(x)
+        encoded = self.encoder(x)
+        if self.cosine_latent:
+            encoded = nn.functional.normalize(encoded, p=2, dim=-1)
+        return encoded
 
 
 class TabResnet(nn.Module):
@@ -161,7 +166,6 @@ class TabResnet(nn.Module):
     ):
         super().__init__()
 
-        self.cosine_latent = cosine_latent
         self.heteroscedastic = heteroscedastic
 
         self.encoder = TabResnetEncoder(
@@ -171,6 +175,7 @@ class TabResnet(nn.Module):
             active=active,
             pe_bool=True,
             norm=norm,
+            cosine_latent=cosine_latent,
         )
 
         if decoder_dims is None:
@@ -193,8 +198,6 @@ class TabResnet(nn.Module):
 
     def forward(self, x):
         encoded = self.encoder(x)
-        if self.cosine_latent:
-            encoded = nn.functional.normalize(encoded, p=2, dim=-1)
         decoded = self.decoder(encoded)
         out = self.reconstruction_layer(decoded)
         if self.heteroscedastic:
@@ -268,8 +271,10 @@ class TabDenseEncoder(nn.Module):
         dropout_prob: float = 0.1,
         active: str = "elu",
         norm: str = "batch",
+        cosine_latent: bool = False,
     ):
         super().__init__()
+        self.cosine_latent = cosine_latent
         self.pe = PeriodicEmbeddings(input_dim, d_embedding=d_embedding, lite=False)
         self.flatten = nn.Flatten()
         self.input_proj = nn.Linear(input_dim * d_embedding, latent_size)
@@ -282,7 +287,10 @@ class TabDenseEncoder(nn.Module):
         x = self.flatten(self.pe(x))
         x = self.input_proj(x)
         x = self.block(x)
-        return self.projection(x)
+        x = self.projection(x)
+        if self.cosine_latent:
+            x = nn.functional.normalize(x, p=2, dim=-1)
+        return x
 
 
 class TabDenseDecoder(nn.Module):
@@ -333,7 +341,6 @@ class TabDenseNet(nn.Module):
         heteroscedastic: bool = False,
     ):
         super().__init__()
-        self.cosine_latent = cosine_latent
         self.heteroscedastic = heteroscedastic
 
         self.encoder = TabDenseEncoder(
@@ -345,6 +352,7 @@ class TabDenseNet(nn.Module):
             dropout_prob,
             active,
             norm,
+            cosine_latent=cosine_latent,
         )
 
         self._output_cols = output_cols if output_cols is not None else continuous_cols
@@ -361,8 +369,6 @@ class TabDenseNet(nn.Module):
 
     def forward(self, x: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
         encoded = self.encoder(x)
-        if self.cosine_latent:
-            encoded = nn.functional.normalize(encoded, p=2, dim=-1)
         out = self.decoder(encoded)
         if self.heteroscedastic:
             mean, logvar = out.chunk(2, dim=-1)
