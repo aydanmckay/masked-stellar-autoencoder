@@ -18,10 +18,10 @@ cd masked-stellar-autoencoder
 
 if nvidia-smi >/dev/null 2>&1; then
   echo "CUDA detected, installing GPU environment..."
-  pixi install -e gpu
+  pixi install --frozen -e gpu
 else
   echo "WARNING: No CUDA detected — installing CPU-only environment"
-  pixi install -e default
+  pixi install --frozen -e default
 fi
 
 mkdir -p /arc/projects/k-pop

@@ -14,7 +14,7 @@ cd masked-stellar-autoencoder
 SCRATCH_BASE="/scratch/msa-pretrain"
 
 astroai-lab resume msa-gpu
-pixi install -e gpu
+pixi install --frozen -e gpu
 mkdir -p "${SCRATCH_BASE}/checkpoints"
 nvidia-smi || true
 pixi run python -u training/pretrain_msa.py --config configs/pretrain.canfar.yaml

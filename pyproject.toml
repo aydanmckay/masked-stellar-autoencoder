@@ -40,8 +40,7 @@ ci-precommit = "SKIP=ci-tests pre-commit run --all-files --color always"
 ci = "SKIP=ci-tests pre-commit run --all-files --color always && pytest tests/"
 
 [tool.pixi.environments]
-default = { solve-group = "msa" }
-gpu = { features = ["gpu"], solve-group = "msa" }
+gpu = { features = ["gpu"] }
 
 [tool.pixi.dependencies]
 python = "3.12.*"
