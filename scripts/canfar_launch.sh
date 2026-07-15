@@ -13,7 +13,7 @@ TRAIN_URL="https://api.github.com/repos/sfabbro/masked-stellar-autoencoder/conte
 echo "Launching training session (16 cores, 64 GB, 1 GPU)..."
 canfar create -n msa-pretrain -c 16 -m 64 -g 1 \
   headless astroai/webterm:latest \
-  -- python3 -c "__import__('sys').exit(__import__('os').system(__import__('base64').b64decode(__import__('json').loads(__import__('urllib.request',fromlist=['request']).urlopen('${TRAIN_URL}').read())['content']).decode()))"
+  -- python3 -c "__import__('os').execvp('bash',['bash','-c',__import__('base64').b64decode(__import__('json').loads(__import__('urllib.request',fromlist=['request']).urlopen('${TRAIN_URL}').read())['content']).decode()])"
 
 TRAIN_ID=$(canfar ps -a --json | python3 -c "import sys,json;print([s['id'] for s in json.load(sys.stdin) if s.get('name')=='msa-pretrain'][0])")
 

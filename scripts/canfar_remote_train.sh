@@ -1,7 +1,11 @@
-#!/bin/sh
+#!/bin/bash
 # Runs INSIDE the CANFAR session. Launches MSA pretrain.
 set -eu
 . /etc/astroai-lab/profile.sh
+
+# pixi/uv default cache dir is /usr/local/share which is not user-writable
+export PIXI_CACHE_DIR="/tmp/pixi-cache"
+export PIXI_HOME="/scratch/msa-pretrain/.pixi"
 
 cd /srcdir
 git clone --depth 1 https://github.com/sfabbro/masked-stellar-autoencoder.git

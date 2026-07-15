@@ -20,7 +20,7 @@ SETUP_URL="https://api.github.com/repos/sfabbro/masked-stellar-autoencoder/conte
 echo "Creating setup session (CPU-only, for environment install + data staging)..."
 canfar create -n msa-setup -c 8 -m 32 \
   headless astroai/webterm:latest \
-  -- python3 -c "__import__('sys').exit(__import__('os').system(__import__('base64').b64decode(__import__('json').loads(__import__('urllib.request',fromlist=['request']).urlopen('${SETUP_URL}').read())['content']).decode()))"
+  -- python3 -c "__import__('os').execvp('bash',['bash','-c',__import__('base64').b64decode(__import__('json').loads(__import__('urllib.request',fromlist=['request']).urlopen('${SETUP_URL}').read())['content']).decode()])"
 
 # Extract session ID via JSON (canfar ps has no -n name filter)
 SETUP_ID=$(canfar ps -a --json | python3 -c "import sys,json;print([s['id'] for s in json.load(sys.stdin) if s.get('name')=='msa-setup'][0])")
