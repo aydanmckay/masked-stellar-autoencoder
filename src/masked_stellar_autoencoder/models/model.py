@@ -3,6 +3,7 @@ import logging
 import math
 import os
 import random
+import time
 from dataclasses import dataclass
 
 import numpy as np
@@ -679,6 +680,13 @@ class TabResnetWrapper(BaseEstimator):
             self.xp_col_start = 5
             self.xp_col_end = 115
 
+        # CANFAR output defaults (no-op unless configured via _configure_canfar_output)
+        self._metrics_file = None
+        self._residual_stats_file = None
+        self._arc_checkpoint_dir = None
+        self._arc_sync_interval = 5
+        self._epoch_start = None
+
     @property
     def _pert_channel_scale_tensor(self):
         # ⚡ Bolt: Cache static tensor to prevent repetitive host-to-device transfers and CPU-GPU syncs
@@ -876,6 +884,90 @@ class TabResnetWrapper(BaseEstimator):
             force=True,
         )
 
+    def _configure_canfar_output(
+        self,
+        metrics_file=None,
+        residual_stats_file=None,
+        arc_checkpoint_dir=None,
+        arc_sync_interval=5,
+    ):
+        self._metrics_file = metrics_file
+        self._residual_stats_file = residual_stats_file
+        self._arc_checkpoint_dir = arc_checkpoint_dir
+        self._arc_sync_interval = arc_sync_interval
+        self._epoch_start = None
+
+    def _log_epoch_metrics(self, epoch, total_epochs, mean_loss, val_loss, optimizer):
+        if not self._metrics_file:
+            return
+        import json
+        import time
+
+        entry = {
+            "epoch": epoch + 1,
+            "total_epochs": total_epochs,
+            "train_loss": round(float(mean_loss), 8),
+            "val_loss": (round(float(val_loss), 8) if val_loss is not None else None),
+            "lr": float(optimizer.param_groups[0]["lr"]),
+            "wall_time_s": (
+                round(time.time() - self._epoch_start, 1) if self._epoch_start else None
+            ),
+        }
+        with open(self._metrics_file, "a") as f:
+            f.write(json.dumps(entry) + "\n")
+
+    def _log_residual_stats(self, val_keys, epoch, mini_batch=32768):
+        if not self._residual_stats_file:
+            return
+        import json
+
+        self.model.eval()
+        stats: dict = {"epoch": epoch + 1}
+        with torch.no_grad():
+            X_val, eX_val = self._load_data(val_keys[0])
+            n = min(10000, X_val.shape[0])
+            idx = torch.randperm(X_val.shape[0], device=self.device)[:n]
+            X_sub = X_val[idx]
+            del X_val, eX_val
+            X_masked, mask, nanmask = self._apply_mask(X_sub)
+            X_recon, _ = self.model(X_masked)
+            recon_mask = mask[:, : -self.diff] & nanmask[:, : -self.diff]
+            errors = (X_recon - X_sub[:, : -self.diff]).abs()
+            errors = errors.masked_fill(~recon_mask, float("nan"))
+            # XP coefficients (within recon cols, between xp_col_start..xp_col_end)
+            xp_err = errors[:, self.xp_col_start : self.xp_col_end]
+            valid = xp_err[~torch.isnan(xp_err)]
+            if valid.numel() > 0:
+                stats["xp_mae"] = round(valid.mean().item(), 8)
+                stats["xp_p84"] = round(valid.quantile(0.84).item(), 8)
+            # Photometry (before xp_col_start and after xp_col_end within recon cols)
+            photo_idx = list(range(self.xp_col_start)) + list(
+                range(self.xp_col_end, errors.shape[1])
+            )
+            photo_err = errors[:, photo_idx]
+            valid = photo_err[~torch.isnan(photo_err)]
+            if valid.numel() > 0:
+                stats["photo_mae"] = round(valid.mean().item(), 8)
+            # Overall
+            all_valid = errors[~torch.isnan(errors)]
+            if all_valid.numel() > 0:
+                stats["overall_mae"] = round(all_valid.mean().item(), 8)
+        with open(self._residual_stats_file, "a") as f:
+            f.write(json.dumps(stats) + "\n")
+
+    def _sync_checkpoint_to_arc(self):
+        if not self._arc_checkpoint_dir:
+            return
+        import os
+        import shutil
+
+        os.makedirs(self._arc_checkpoint_dir, exist_ok=True)
+        src = self.pt_save_str
+        dst = os.path.join(self._arc_checkpoint_dir, os.path.basename(src))
+        tmp = dst + ".tmp"
+        shutil.copy2(src, tmp)
+        os.replace(tmp, dst)
+
     def _load_pretrain_resume(self, pretrained, optimizer, scheduler):
         epoch_loss = 0.0
         loss_div = 0.0
@@ -986,6 +1078,7 @@ class TabResnetWrapper(BaseEstimator):
         running_pt_loss,
         running_pt_validation_loss,
     ):
+        self._epoch_start = time.time()
         random.shuffle(train_keys)
         self.model.train()
         pbar = tqdm.tqdm(
@@ -1015,6 +1108,14 @@ class TabResnetWrapper(BaseEstimator):
         self._save_pretrain_checkpoints(
             epoch, optimizer, scheduler, epoch_loss, loss_div
         )
+        # CANFAR monitoring: log metrics + residual stats, sync checkpoint to /arc
+        validation = (
+            running_pt_validation_loss[-1] if running_pt_validation_loss else None
+        )
+        self._log_epoch_metrics(epoch, total_epochs, mean_loss, validation, optimizer)
+        self._log_residual_stats(val_keys, epoch, mini_batch)
+        if (epoch + 1) % self._arc_sync_interval == 0:
+            self._sync_checkpoint_to_arc()
         return epoch_loss, loss_div
 
     def _chain_finetune_after_pretrain(self, ft_stuff) -> None:

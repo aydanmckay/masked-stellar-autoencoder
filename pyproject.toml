@@ -39,6 +39,10 @@ ci-precommit = "SKIP=ci-tests pre-commit run --all-files --color always"
 # `pre-commit run` skips `ci-tests` so pytest is not run twice (that hook runs on commit).
 ci = "SKIP=ci-tests pre-commit run --all-files --color always && pytest tests/"
 
+[tool.pixi.environments]
+default = { solve-group = "msa" }
+gpu = { features = ["gpu"], solve-group = "msa" }
+
 [tool.pixi.dependencies]
 python = "3.12.*"
 pytorch = ">=2.1.0"
@@ -55,6 +59,13 @@ wandb = ">=0.16.0"
 ruff = "*"
 pytest = "*"
 pytest-mock = ">=3.15.1,<4"
+
+[tool.pixi.feature.gpu.target.linux-64.dependencies]
+pytorch-gpu = ">=2.1.0"
+cuda-version = ">=12.4"
+
+[tool.pixi.feature.gpu.tasks]
+train = "python -u training/pretrain_msa.py --config configs/pretrain.canfar.yaml"
 
 [tool.pixi.pypi-dependencies]
 masked-stellar-autoencoder = { path = ".", editable = true }

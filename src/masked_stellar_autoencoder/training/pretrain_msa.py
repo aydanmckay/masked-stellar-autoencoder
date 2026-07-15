@@ -135,6 +135,13 @@ def main():
         ),
     )
 
+    pretrain_wrapper._configure_canfar_output(
+        metrics_file=config["saving"].get("metrics_file"),
+        residual_stats_file=config["saving"].get("residual_stats_file"),
+        arc_checkpoint_dir=config["saving"].get("arc_checkpoint_dir"),
+        arc_sync_interval=config["saving"].get("arc_sync_interval", 5),
+    )
+
     epochs = config["training"]["epochs"]
     batch = config["training"]["mini_batch_size"]
     presaved = config["training"].get("presaved")
