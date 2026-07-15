@@ -653,6 +653,19 @@ class TabResnetWrapper(BaseEstimator):
         except ValueError:
             self.parallax_feature_idx = None
 
+        # Derive XP column indices from feature_cols for masking
+        xp_indices = [
+            idx
+            for idx, c in enumerate(feature_cols)
+            if c.startswith("bp_") or c.startswith("rp_")
+        ]
+        if xp_indices:
+            self.xp_col_start = min(xp_indices)
+            self.xp_col_end = max(xp_indices) + 1
+        else:
+            self.xp_col_start = 5
+            self.xp_col_end = 115
+
     @property
     def _pert_channel_scale_tensor(self):
         # ⚡ Bolt: Cache static tensor to prevent repetitive host-to-device transfers and CPU-GPU syncs
@@ -672,25 +685,23 @@ class TabResnetWrapper(BaseEstimator):
             raise RuntimeError("pert_channel_scale length must match feature dimension")
         return noise * w.unsqueeze(0)
 
-    def _apply_mask(
-        self, X, col_start_fixed=5, col_end_fixed=115, col_start_random=115
-    ):
+    def _apply_mask(self, X):
         """
         Apply masking strategies to the input tensor while tracking NaN locations:
-        1. Mask columns [5:115] for a random subset of rows.
-        2. Mask columns [0:5] and [115:] randomly per element.
+        1. Mask XP coefficient columns for a random subset of rows.
+        2. Mask photometric band columns randomly per element.
 
         Args:
             X (Tensor): Input data tensor.
-            col_start_fixed (int): Start index of the fixed subsection of columns to mask.
-            col_end_fixed (int): End index (exclusive) of the fixed subsection to mask.
-            col_start_random (int): Start index for columns to apply random masking.
 
         Returns:
             X_masked (Tensor): Tensor with masking applied.
             mask (Tensor): Boolean mask indicating where the mask was applied.
             nan_mask (Tensor): Boolean mask indicating original NaN locations.
         """
+        col_start_fixed = self.xp_col_start
+        col_end_fixed = self.xp_col_end
+        col_start_random = self.xp_col_end
         # ⚡ Bolt: Use .detach().clone() instead of .clone().detach() and allocate tensors directly on target device (using device=self.device) to prevent host-to-device transfers and CPU-GPU synchronization overhead.
         X_masked = X.detach().clone().to(self.device)
 
@@ -849,6 +860,7 @@ class TabResnetWrapper(BaseEstimator):
             format="%(asctime)s - Sub-Epoch: %(message)s",
             datefmt="%Y-%m-%d %H:%M:%S",
             filemode="a",
+            force=True,
         )
 
     def _load_pretrain_resume(self, pretrained, optimizer, scheduler):
@@ -891,7 +903,7 @@ class TabResnetWrapper(BaseEstimator):
             and (epoch + 1) % self.checkpoint_interval == 0
         ):
             interval_path = (
-                f"{self.pt_save_str.split('.')[0]}_checkpoint_{epoch + 1}.pth"
+                f"{os.path.splitext(self.pt_save_str)[0]}_checkpoint_{epoch + 1}.pth"
             )
             torch.save(payload, interval_path)
 
@@ -947,7 +959,7 @@ class TabResnetWrapper(BaseEstimator):
     def _run_pretrain_epoch(
         self,
         epoch,
-        num_epochs,
+        total_epochs,
         train_keys,
         val_keys,
         optimizer,
@@ -976,7 +988,7 @@ class TabResnetWrapper(BaseEstimator):
 
         scheduler.step()
         mean_loss = epoch_loss / loss_div if loss_div else 0.0
-        print(f"Pre-training Epoch [{epoch + 1}/{num_epochs}], Loss: {mean_loss}")
+        print(f"Pre-training Epoch [{epoch + 1}/{total_epochs}], Loss: {mean_loss}")
         running_pt_loss.append(mean_loss)
 
         if val_keys is not None:
@@ -989,7 +1001,7 @@ class TabResnetWrapper(BaseEstimator):
         )
         return epoch_loss, loss_div
 
-    def _chain_finetune_after_pretrain(self, ft_stuff, test_stuff) -> None:
+    def _chain_finetune_after_pretrain(self, ft_stuff) -> None:
         if ft_stuff is None:
             return
         self.fit(
@@ -1008,7 +1020,6 @@ class TabResnetWrapper(BaseEstimator):
             multitask=ft_stuff[12],
             rncloss=ft_stuff[13],
             last=True,
-            test_stuff=test_stuff,
         )
 
     def pretrain_hdf(
@@ -1017,7 +1028,6 @@ class TabResnetWrapper(BaseEstimator):
         num_epochs=10,
         val_keys=None,
         ft_stuff=None,
-        test_stuff=None,
         mini_batch=32,
         pretrained=None,
     ):
@@ -1029,7 +1039,6 @@ class TabResnetWrapper(BaseEstimator):
             num_epochs: Number of epochs for pretraining.
             val_keys: Optional validation dataset files in the large h5 (features).
             ft_stuff:
-            test_stuff:
             mini_batch: Mini-batch size for pretraining.
         """
         optimizer, scheduler = self._setup_pretrain_optimizer()
@@ -1045,7 +1054,7 @@ class TabResnetWrapper(BaseEstimator):
             epoch += pretrained_epoch
             epoch_loss, loss_div = self._run_pretrain_epoch(
                 epoch,
-                num_epochs,
+                pretrained_epoch + num_epochs,
                 train_keys,
                 val_keys,
                 optimizer,
@@ -1057,7 +1066,7 @@ class TabResnetWrapper(BaseEstimator):
                 running_pt_validation_loss,
             )
 
-        self._chain_finetune_after_pretrain(ft_stuff, test_stuff)
+        self._chain_finetune_after_pretrain(ft_stuff)
 
     def validate(self, val_keys, criterion, mini_batch=32):
         """
@@ -1101,7 +1110,7 @@ class TabResnetWrapper(BaseEstimator):
                         X_batch[:, : -self.diff],
                         X_reconstructed,
                         reconstruction_mask,
-                        eX_batch[:, : -self.diff],
+                        1.0 / (eX_batch[:, : -self.diff] ** 2 + 1e-8),
                     )
 
                     val_loss += batch_loss.item()
@@ -1208,9 +1217,6 @@ class TabResnetWrapper(BaseEstimator):
     def _apply_parallax_mask(self, X_masked, parallax_feature_idx):
         parallax_masked = X_masked.clone()
         parallax_masked[:, parallax_feature_idx] = -9999
-        indicator_idx = parallax_feature_idx + len(self.feature_cols)
-        if indicator_idx < parallax_masked.shape[1]:
-            parallax_masked[:, indicator_idx] = 1.0
         return parallax_masked
 
     @property
@@ -1296,9 +1302,13 @@ class TabResnetWrapper(BaseEstimator):
             )
             y_raw_masked, _ = self._forward_pass(parallax_masked, ctx.linearprobe)
             if y_raw.dim() == 3:
-                y_raw[:, p_idx, :] = y_raw_masked[:, p_idx, :]
+                y_new = y_raw.clone()
+                y_new[:, p_idx, :] = y_raw_masked[:, p_idx, :]
+                y_raw = y_new
             else:
-                y_raw[:, p_idx] = y_raw_masked[:, p_idx]
+                y_new = y_raw.clone()
+                y_new[:, p_idx] = y_raw_masked[:, p_idx]
+                y_raw = y_new
         return y_raw
 
     def _compute_finetune_batch_loss(self, batch, ctx: FinetuneContext):
@@ -1311,7 +1321,14 @@ class TabResnetWrapper(BaseEstimator):
                 y_batch + torch.randn_like(y_batch, device=y_batch.device) * e_y_batch
             )
 
-        y_raw, encoded = self._forward_pass(X_masked, ctx.linearprobe)
+        # When multitask, run full autoencoder once and reuse encoded for the head
+        if ctx.multitask:
+            X_reconstructed, encoded = self.model(X_masked)
+            y_raw = self.lp(encoded) if ctx.linearprobe else self.ft(encoded)
+        else:
+            y_raw, encoded = self._forward_pass(X_masked, ctx.linearprobe)
+            X_reconstructed = None
+
         y_raw = self._apply_parallax_masked_forward(X_masked, y_batch, y_raw, ctx)
 
         if ctx.ftlf == "quantile":
@@ -1338,7 +1355,6 @@ class TabResnetWrapper(BaseEstimator):
             )
 
         if ctx.multitask:
-            X_reconstructed, _ = self.model(X_masked)
             reconstruction_mask = mask[:, : -self.diff] & nanmask[:, : -self.diff]
             reconstruction_w = 1.0 / (eX_batch[:, : -self.diff] ** 2 + 1e-8)
             rec = self.loss_fn(
@@ -1363,7 +1379,7 @@ class TabResnetWrapper(BaseEstimator):
                     "Gaussian NLL path requires a (mean, logvar) tuple head; not supported for quantile head"
                 )
             loss += ctx.criterion2(
-                y_head, y_batch, torch.ones_like(y_pred_err), torch.ones_like(e_y_batch)
+                y_head, y_batch, y_pred_err, torch.ones_like(e_y_batch)
             )
 
         return loss
@@ -1388,6 +1404,10 @@ class TabResnetWrapper(BaseEstimator):
             ftactivationfunc = nn.ELU()
         elif ftact == "gelu":
             ftactivationfunc = nn.GELU()
+        else:
+            raise ValueError(
+                f"Unknown ftact {ftact!r}; expected 'relu', 'elu', or 'gelu'"
+            )
 
         self.lp = None
         if linearprobe:
@@ -1407,10 +1427,10 @@ class TabResnetWrapper(BaseEstimator):
             if not linearprobe:
                 self.ft.load_state_dict(state_dict["prediction_head_state_dict"])
             print("loaded checkpoint")
-        except Exception:
+        except (FileNotFoundError, KeyError, RuntimeError, ValueError) as e:
+            print(f"Checkpoint load failed ({e}), reinitializing head")
             if not linearprobe:
                 self.ft.apply(self.init_weights_gelu)
-            print("restarting fine-tuning")
 
     def _build_finetune_context(
         self,
@@ -1534,8 +1554,7 @@ class TabResnetWrapper(BaseEstimator):
             and (epoch + 1) % self.checkpoint_interval == 0
         ):
             interval_path = (
-                f"{self.ft_save_str.split('.')[0]}"
-                f"_checkpoint_{self.checkpoint_interval}.pth"
+                f"{os.path.splitext(self.ft_save_str)[0]}_checkpoint_{epoch + 1}.pth"
             )
             torch.save(payload, interval_path)
 
@@ -1639,7 +1658,6 @@ class TabResnetWrapper(BaseEstimator):
         ftlf="mse",
         ftdim="1layer512",
         ftlabeldim=5,
-        test_stuff=None,
         pt_epoch=0,
         pert_features=False,
         pert_labels=False,
@@ -1785,7 +1803,7 @@ class TabResnetWrapper(BaseEstimator):
             torch.as_tensor(e_y_val, device=self.device, dtype=torch.float32),
         )
         rdataset = TensorDataset(X_val, eX_val, y_val, e_y_val)
-        val_loader = DataLoader(rdataset, batch_size=mini_batch, shuffle=True)
+        val_loader = DataLoader(rdataset, batch_size=mini_batch, shuffle=False)
 
         ctx = self._build_finetune_context(
             linearprobe,

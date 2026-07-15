@@ -50,7 +50,11 @@ def _inverse_labels(
         teff_space = pack.get("teff_target_space", "linear")
     for i in range(6):
         col = scalers[i].inverse_transform(y_scaled[:, i].reshape(-1, 1)).ravel()
-        if i == 5 and parallax_space == "log10_mas" or i == 0 and teff_space == "log10":
+        if i == 5 and parallax_space == "log10_mas":
+            out[:, i] = np.power(10.0, col)
+        elif i == 5 and parallax_space == "asinh_mas":
+            out[:, i] = np.sinh(col)
+        elif i == 0 and teff_space == "log10":
             out[:, i] = np.power(10.0, col)
         else:
             out[:, i] = col
@@ -74,12 +78,11 @@ def _inverse_quantile_block(
     for j in range(ell):
         for k in range(3):
             col = scalers[j].inverse_transform(y_q[:, j, k].reshape(-1, 1)).ravel()
-            if (
-                j == 5
-                and parallax_space == "log10_mas"
-                or j == 0
-                and teff_space == "log10"
-            ):
+            if j == 5 and parallax_space == "log10_mas":
+                out[:, j, k] = np.power(10.0, col)
+            elif j == 5 and parallax_space == "asinh_mas":
+                out[:, j, k] = np.sinh(col)
+            elif j == 0 and teff_space == "log10":
                 out[:, j, k] = np.power(10.0, col)
             else:
                 out[:, j, k] = col
@@ -160,9 +163,17 @@ def _metrics_block(y_true: np.ndarray, y_pred: np.ndarray, names: list) -> dict:
     return block
 
 
-def _mask_xp_columns(x: np.ndarray, xp_lo: int = 5, xp_hi: int = 115) -> np.ndarray:
+def _mask_xp_columns(x: np.ndarray, feature_cols: list) -> np.ndarray:
+    """Mask XP coefficient columns (bp_*/rp_*) with NaN for XP-off evaluation."""
+    xp_indices = [
+        idx
+        for idx, c in enumerate(feature_cols)
+        if c.startswith("bp_") or c.startswith("rp_")
+    ]
+    if not xp_indices:
+        return x.copy()
     out = x.copy()
-    out[:, xp_lo:xp_hi] = np.nan
+    out[:, min(xp_indices) : max(xp_indices) + 1] = np.nan
     return out
 
 
@@ -370,7 +381,7 @@ def main():
     )
     y_pred_phys = _inverse_labels(ens_med, scalers, pack)
 
-    X_off = _mask_xp_columns(X_test)
+    X_off = _mask_xp_columns(X_test, cols)
     ens_med_off = _ensemble_median_predictions(
         model,
         head,

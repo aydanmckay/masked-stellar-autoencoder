@@ -119,6 +119,40 @@ def _get_scaler_cls(label_scaler_kind: str) -> Any:
         )
 
 
+def _propagate_label_error(scaler, y, e):
+    """Propagate label error through a scaler.
+
+    For linear scalers (StandardScaler, RobustScaler), dividing by scale_ is exact.
+    For nonlinear scalers (PowerTransformer), use the delta-method: |PT(y+e) - PT(y)|.
+    """
+    if isinstance(scaler, PowerTransformer):
+        y_flat = np.asarray(y, dtype=np.float64).ravel()
+        e_flat = np.asarray(e, dtype=np.float64).ravel()
+        return (
+            np.abs(
+                scaler.transform((y_flat + e_flat).reshape(-1, 1))
+                - scaler.transform(y_flat.reshape(-1, 1))
+            )
+            .ravel()
+            .astype(np.float32)
+        )
+    elif hasattr(scaler, "scale_"):
+        return (np.asarray(e, dtype=np.float64) / scaler.scale_.ravel()).astype(
+            np.float32
+        )
+    else:
+        y_flat = np.asarray(y, dtype=np.float64).ravel()
+        e_flat = np.asarray(e, dtype=np.float64).ravel()
+        return (
+            np.abs(
+                scaler.transform((y_flat + e_flat).reshape(-1, 1))
+                - scaler.transform(y_flat.reshape(-1, 1))
+            )
+            .ravel()
+            .astype(np.float32)
+        )
+
+
 def _scale_parallax(
     trainset: np.ndarray,
     validset: np.ndarray,
@@ -136,25 +170,6 @@ def _scale_parallax(
         yva, mva = parallax_label_log10(pi_va, parallax_floor_mas)
         etr = parallax_label_error_log10(pi_tr, etrainset[:, pos], parallax_floor_mas)
         eva = parallax_label_error_log10(pi_va, evalidset[:, pos], parallax_floor_mas)
-        scaler = scaler_cls()
-        if np.any(mtr):
-            scaler.fit(ytr[mtr].reshape(-1, 1))
-        else:
-            scaler.fit(np.array([[0.0]], dtype=np.float64))
-        label = np.full(len(ytr), np.nan, dtype=np.float32)
-        elabel = np.full(len(ytr), np.nan, dtype=np.float32)
-        if np.any(mtr):
-            label[mtr] = (
-                scaler.transform(ytr[mtr].reshape(-1, 1)).astype(np.float32).ravel()
-            )
-            elabel[mtr] = (etr[mtr] / scaler.scale_.ravel()).astype(np.float32)
-        vlabel = np.full(len(yva), np.nan, dtype=np.float32)
-        velabel = np.full(len(yva), np.nan, dtype=np.float32)
-        if np.any(mva):
-            vlabel[mva] = (
-                scaler.transform(yva[mva].reshape(-1, 1)).astype(np.float32).ravel()
-            )
-            velabel[mva] = (eva[mva] / scaler.scale_.ravel()).astype(np.float32)
     elif parallax_target_space == "asinh_mas":
         pi_tr = trainset[:, pos].astype(np.float64).copy()
         pi_va = validset[:, pos].astype(np.float64).copy()
@@ -162,31 +177,35 @@ def _scale_parallax(
         yva, mva = parallax_label_asinh(pi_va, scale_mas=1.0)
         etr = parallax_label_error_asinh(pi_tr, etrainset[:, pos], scale_mas=1.0)
         eva = parallax_label_error_asinh(pi_va, evalidset[:, pos], scale_mas=1.0)
-        scaler = scaler_cls()
-        if np.any(mtr):
-            scaler.fit(ytr[mtr].reshape(-1, 1))
-        else:
-            scaler.fit(np.array([[0.0]], dtype=np.float64))
-        label = np.full(len(ytr), np.nan, dtype=np.float32)
-        elabel = np.full(len(ytr), np.nan, dtype=np.float32)
-        if np.any(mtr):
-            label[mtr] = (
-                scaler.transform(ytr[mtr].reshape(-1, 1)).astype(np.float32).ravel()
-            )
-            elabel[mtr] = (etr[mtr] / scaler.scale_.ravel()).astype(np.float32)
-        vlabel = np.full(len(yva), np.nan, dtype=np.float32)
-        velabel = np.full(len(yva), np.nan, dtype=np.float32)
-        if np.any(mva):
-            vlabel[mva] = (
-                scaler.transform(yva[mva].reshape(-1, 1)).astype(np.float32).ravel()
-            )
-            velabel[mva] = (eva[mva] / scaler.scale_.ravel()).astype(np.float32)
     else:
-        scaler = scaler_cls()
-        label = scaler.fit_transform(trainset[:, pos].reshape(-1, 1))
-        elabel = etrainset[:, pos] / scaler.scale_
-        vlabel = scaler.transform(validset[:, pos].reshape(-1, 1))
-        velabel = evalidset[:, pos] / scaler.scale_
+        ytr = trainset[:, pos].astype(np.float64)
+        yva = validset[:, pos].astype(np.float64)
+        mtr = np.isfinite(ytr)
+        mva = np.isfinite(yva)
+        etr = etrainset[:, pos].astype(np.float64)
+        eva = evalidset[:, pos].astype(np.float64)
+
+    scaler = scaler_cls()
+    if np.any(mtr):
+        scaler.fit(ytr[mtr].reshape(-1, 1))
+    else:
+        scaler.fit(np.array([[0.0]], dtype=np.float64))
+
+    label = np.full(len(ytr), np.nan, dtype=np.float32)
+    elabel = np.full(len(ytr), np.nan, dtype=np.float32)
+    if np.any(mtr):
+        label[mtr] = (
+            scaler.transform(ytr[mtr].reshape(-1, 1)).astype(np.float32).ravel()
+        )
+        elabel[mtr] = _propagate_label_error(scaler, ytr[mtr], etr[mtr])
+
+    vlabel = np.full(len(yva), np.nan, dtype=np.float32)
+    velabel = np.full(len(yva), np.nan, dtype=np.float32)
+    if np.any(mva):
+        vlabel[mva] = (
+            scaler.transform(yva[mva].reshape(-1, 1)).astype(np.float32).ravel()
+        )
+        velabel[mva] = _propagate_label_error(scaler, yva[mva], eva[mva])
 
     return label, elabel, vlabel, velabel, scaler
 
@@ -255,7 +274,17 @@ def _scale_paired_label_blocks(
         vlabelled_set.append(scalers[i].transform(vy_base))
         vy_plus = vy_base + target_valid[:, i * 2 + 1].reshape(-1, 1)
 
-        if hasattr(scalers[i], "scale_"):
+        # For nonlinear scalers (PowerTransformer), use delta-method for accurate
+        # error propagation. For linear scalers (StandardScaler, RobustScaler),
+        # dividing by scale_ is exact.
+        if isinstance(scalers[i], PowerTransformer):
+            elabel = np.abs(
+                scalers[i].transform(y_plus) - scalers[i].transform(y_base)
+            ).ravel()
+            velabel = np.abs(
+                scalers[i].transform(vy_plus) - scalers[i].transform(vy_base)
+            ).ravel()
+        elif hasattr(scalers[i], "scale_"):
             scale_attr = scalers[i].scale_
             elabel = target_train[:, i * 2 + 1] / scale_attr
             velabel = target_valid[:, i * 2 + 1] / scale_attr
@@ -345,6 +374,13 @@ def prepare_finetune_arrays(
     )
 
     target_set = target_test[:, [i for i in range(num_classes) if i % 2 == 0]]
+
+    # Convert teff in target_set back to physical units so ground truth matches
+    # the inverse-transformed predictions in evaluation.
+    if pproc_early.get("teff_target_space", "linear") == "log10":
+        m_pos = target_set[:, 0] > 0
+        if np.any(m_pos):
+            target_set[m_pos, 0] = np.power(10.0, target_set[m_pos, 0])
 
     pos = cols.index("PARALLAX")
     pproc = pproc_early

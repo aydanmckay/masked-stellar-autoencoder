@@ -115,7 +115,6 @@ new_funcs = (
         ftlf="mse",
         ftdim="1layer512",
         ftlabeldim=5,
-        test_stuff=None,
         pt_epoch=0,
         pert_features=False,
         pert_labels=False,

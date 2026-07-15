@@ -37,9 +37,17 @@ class ResBlock(nn.Module):
 
         # resizing the layers in case of a difference
         if in_features != out_features:
+            if norm == "batch":
+                resize_normal = nn.BatchNorm1d(out_features)
+            elif norm == "layer":
+                resize_normal = nn.LayerNorm(out_features)
+            else:
+                raise ValueError(
+                    f"Unsupported norm type: {norm}. Use 'batch' or 'layer'"
+                )
             self.resize = nn.Sequential(
                 nn.Linear(in_features, out_features, bias=False),
-                self.normal,
+                resize_normal,
             )
         else:
             self.resize = None

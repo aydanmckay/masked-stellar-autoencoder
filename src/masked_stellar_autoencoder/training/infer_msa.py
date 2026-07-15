@@ -107,12 +107,7 @@ def load_scalers(state, config):
         featurescaler = state["featurescaler"]
         label_scalers = state["label_scalers"]
         label_names = ["teff", "logg", "fe_h", "alpha", "age", "parallax"]
-        error_cols, cols = [], []
-        for x in config["data"]["feature_cols"]:
-            if x.startswith("e_"):
-                error_cols.append(x[2:])
-            else:
-                cols.append(x)
+        cols = config["data"]["feature_cols"]
         recon_cols = config["data"]["recon_cols"]
         # Mock pack object for downstream post_processing rules
         pack = {
@@ -124,6 +119,9 @@ def load_scalers(state, config):
             ),
             "scalers": label_scalers,
             "featurescaler": featurescaler,
+            "label_names": label_names,
+            "feature_cols": cols,
+            "testset": None,
         }
     return pack, featurescaler, label_scalers, label_names, cols, recon_cols
 
@@ -154,6 +152,11 @@ def load_inference_data(inference_data, pack, featurescaler, cols):
             "No --inference-data provided, inferring on base config testset fraction."
         )
         # Assuming prepare_finetune_arrays already robust scaled
+        if pack.get("testset") is None:
+            raise ValueError(
+                "No --inference-data provided and pack has no testset; "
+                "provide --inference-data or run with a full config that includes data splits."
+            )
         X_infer_scaled = pack["testset"]
         source_ids = np.arange(len(X_infer_scaled))
     return source_ids, X_infer_scaled
