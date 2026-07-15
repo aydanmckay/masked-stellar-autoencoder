@@ -6,20 +6,23 @@ set -euo pipefail
 canfar login cadc --dev || true
 canfar server use staging
 
+TRAIN_URL="https://raw.githubusercontent.com/sfabbro/masked-stellar-autoencoder/main/scripts/canfar_remote_train.sh"
+
 # ── Training session (headless, GPU) ──
+# Same zero-space Python one-liner trick as canfar_setup.sh.
 echo "Launching training session (16 cores, 64 GB, 1 GPU)..."
 canfar create -n msa-pretrain -c 16 -m 64 -g 1 \
   headless astroai/webterm:latest \
-  -- bash -c 'cd /srcdir/masked-stellar-autoencoder && bash scripts/canfar_remote_train.sh'
+  -- python3 -c "__import__('sys').exit(__import__('os').system(__import__('urllib.request',fromlist=['request']).urlopen('${TRAIN_URL}').read().decode()))"
 
-TRAIN_ID=$(canfar ps -q -n msa-pretrain | head -1)
+TRAIN_ID=$(canfar ps -a --json | python3 -c "import sys,json;print([s['id'] for s in json.load(sys.stdin) if s.get('name')=='msa-pretrain'][0])")
 
 # ── Marimo monitor (contributed, no GPU) ──
 echo "Launching marimo monitor..."
 canfar create -n msa-monitor -c 2 -m 8 \
   contributed astroai/marimo:latest
 
-MON_ID=$(canfar ps -q -n msa-monitor | head -1)
+MON_ID=$(canfar ps -a --json | python3 -c "import sys,json;print([s['id'] for s in json.load(sys.stdin) if s.get('name')=='msa-monitor'][0])")
 
 echo ""
 echo "=== MSA Pretrain on CANFAR Staging ==="
