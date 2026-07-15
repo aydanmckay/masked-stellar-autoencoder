@@ -1,7 +1,7 @@
-#!/usr/bin/env bash
+#!/bin/sh
 # Runs INSIDE the CANFAR session. Installs MSA env + stages data.
-set -euo pipefail
-source /etc/astroai-lab/profile.sh
+set -eu
+. /etc/astroai-lab/profile.sh
 
 REPO="sfabbro/masked-stellar-autoencoder"
 ARC_BASE="/arc/projects/k-pop/msa_pretrain"

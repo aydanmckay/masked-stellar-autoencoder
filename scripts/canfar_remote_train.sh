@@ -1,7 +1,7 @@
-#!/usr/bin/env bash
+#!/bin/sh
 # Runs INSIDE the CANFAR session. Launches MSA pretrain.
-set -euo pipefail
-source /etc/astroai-lab/profile.sh
+set -eu
+. /etc/astroai-lab/profile.sh
 
 cd /srcdir
 git clone --depth 1 https://github.com/sfabbro/masked-stellar-autoencoder.git
