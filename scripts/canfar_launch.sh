@@ -15,14 +15,14 @@ canfar create -n msa-pretrain -c 16 -m 64 -g 1 \
   headless astroai/webterm:latest \
   -- python3 -c "__import__('os').execvp('bash',['bash','-c',__import__('base64').b64decode(__import__('json').loads(__import__('urllib.request',fromlist=['request']).urlopen('${TRAIN_URL}').read())['content']).decode()])"
 
-TRAIN_ID=$(canfar ps -a --json | python3 -c "import sys,json;print([s['id'] for s in json.load(sys.stdin) if s.get('name')=='msa-pretrain'][0])")
+TRAIN_ID=$(canfar ps -a --json | python3 -c "import sys,json;print([s['id'] for s in json.load(sys.stdin) if s.get('name')=='msa-pretrain'][-1])")
 
 # ── Marimo monitor (contributed, no GPU) ──
 echo "Launching marimo monitor..."
 canfar create -n msa-monitor -c 2 -m 8 \
   contributed astroai/marimo:latest
 
-MON_ID=$(canfar ps -a --json | python3 -c "import sys,json;print([s['id'] for s in json.load(sys.stdin) if s.get('name')=='msa-monitor'][0])")
+MON_ID=$(canfar ps -a --json | python3 -c "import sys,json;print([s['id'] for s in json.load(sys.stdin) if s.get('name')=='msa-monitor'][-1])")
 
 echo ""
 echo "=== MSA Pretrain on CANFAR Staging ==="

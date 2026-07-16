@@ -23,7 +23,7 @@ canfar create -n msa-setup -c 8 -m 32 \
   -- python3 -c "__import__('os').execvp('bash',['bash','-c',__import__('base64').b64decode(__import__('json').loads(__import__('urllib.request',fromlist=['request']).urlopen('${SETUP_URL}').read())['content']).decode()])"
 
 # Extract session ID via JSON (canfar ps has no -n name filter)
-SETUP_ID=$(canfar ps -a --json | python3 -c "import sys,json;print([s['id'] for s in json.load(sys.stdin) if s.get('name')=='msa-setup'][0])")
+SETUP_ID=$(canfar ps -a --json | python3 -c "import sys,json;print([s['id'] for s in json.load(sys.stdin) if s.get('name')=='msa-setup'][-1])")
 echo ""
 echo "Setup session: $SETUP_ID"
 echo "Monitor progress: canfar logs $SETUP_ID"
