@@ -253,14 +253,11 @@ class RnCLoss(nn.Module):
         loss = 0.0
         for i in range(n):
             row_label_diffs = label_diffs[i]
-            row_neg_mask = row_label_diffs.view(1, -1) >= row_label_diffs.view(-1, 1)
-            row_log_sum_exp = torch.log(
-                exp_logits[i]
-                .view(1, -1)
-                .expand_as(row_neg_mask)
-                .masked_fill(~row_neg_mask, 0.0)
-                .sum(dim=1)
-            )
+            # ⚡ Bolt: Use torch.mv with boolean mask matrix instead of masked_fill with expand_as for ~2x faster execution
+            row_neg_mask = (
+                row_label_diffs.unsqueeze(0) >= row_label_diffs.unsqueeze(1)
+            ).to(exp_logits.dtype)
+            row_log_sum_exp = torch.log(torch.mv(row_neg_mask, exp_logits[i]))
             row_pos_log_probs = logits[i] - row_log_sum_exp
             loss = loss - row_pos_log_probs.sum() / (n * (n - 1))
 
