@@ -63,7 +63,7 @@ pytest-mock = ">=3.15.1,<4"
 cuda-version = ">=12.4"
 
 [tool.pixi.feature.gpu.tasks]
-train = "python -u training/pretrain_msa.py --config configs/pretrain.canfar.yaml"
+train = "python -u src/masked_stellar_autoencoder/training/pretrain_msa.py --config configs/pretrain.canfar.yaml"
 
 [tool.pixi.pypi-dependencies]
 masked-stellar-autoencoder = { path = ".", editable = true }
