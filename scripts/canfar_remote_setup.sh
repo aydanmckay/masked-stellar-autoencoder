@@ -24,6 +24,10 @@ else
   pixi install --frozen -e default
 fi
 
+# pixi cache lives in /tmp (ephemeral local storage, 200Gi pod limit).
+# Clean it immediately — the installed env is in PIXI_HOME on /scratch.
+rm -rf "${PIXI_CACHE_DIR}"
+
 mkdir -p /arc/projects/k-pop
 mkdir -p "${ARC_BASE}/checkpoints" "${ARC_BASE}/plots"
 
