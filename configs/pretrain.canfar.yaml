@@ -1,5 +1,5 @@
 data:
-  datafile: '/scratch/msa-pretrain/data.h5'
+  datafile: '/arc/projects/k-pop/catalogues/andrae2023/sslset-realmags-full-052725.h5'
   valid_keys: ['sslset11_part0','sslset14_part0','sslset2_part0','sslset5_part0','sslset20_part0']
   feature_cols: ['W1','W2','G','BP','RP','bp_1','bp_2','bp_3','bp_4','bp_5','bp_6','bp_7','bp_8','bp_9',
                  'bp_10','bp_11','bp_12','bp_13','bp_14','bp_15','bp_16','bp_17','bp_18','bp_19','bp_20',
@@ -69,7 +69,7 @@ training:
   scheduler_eta_min_factor: 0.01
 
 saving:
-  model_str: '/scratch/msa-pretrain/checkpoints/msa_pretrain.pth'
+  model_str: '/arc/projects/k-pop/msa_pretrain/checkpoints/msa_pretrain.pth'
   log_file: '/arc/projects/k-pop/msa_pretrain/pretrain.log'
   metrics_file: '/arc/projects/k-pop/msa_pretrain/metrics.jsonl'
   residual_stats_file: '/arc/projects/k-pop/msa_pretrain/residual_stats.jsonl'

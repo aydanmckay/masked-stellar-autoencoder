@@ -5,7 +5,6 @@ set -eu
 
 REPO="sfabbro/masked-stellar-autoencoder"
 ARC_BASE="/arc/projects/k-pop/msa_pretrain"
-DATA_SRC="/arc/projects/k-pop/catalogues/andrae2023/sslset-realmags-full-052725.h5"
 SCRATCH_BASE="/scratch/msa-pretrain"
 
 # pixi/uv default cache dir is /usr/local/share which is not user-writable
@@ -30,8 +29,5 @@ rm -rf "${PIXI_CACHE_DIR}"
 
 mkdir -p /arc/projects/k-pop
 mkdir -p "${ARC_BASE}/checkpoints" "${ARC_BASE}/plots"
-
-mkdir -p "${SCRATCH_BASE}"
-/opt/astroai/venv/cadc/bin/astroai-lab data stage "${DATA_SRC}" "${SCRATCH_BASE}/data.h5"
 
 echo "=== SETUP COMPLETE ==="
