@@ -24,10 +24,15 @@ canfar create -n msa-monitor -c 2 -m 8 \
 
 MON_ID=$(canfar ps -a --json | python3 -c "import sys,json;print([s['id'] for s in json.load(sys.stdin) if s.get('name')=='msa-monitor'][-1])")
 
+mkdir -p logs
+
 echo ""
 echo "=== MSA Pretrain on CANFAR Staging ==="
 echo "Training: $TRAIN_ID"
 echo "Monitor:  $MON_ID  ->  canfar open $MON_ID"
 echo "Logs:     canfar logs $TRAIN_ID"
+echo ""
+echo "Save logs before completion (CANFAR retains logs for only 1h after job ends):"
+echo "  scripts/canfar_save_logs.sh $TRAIN_ID"
 echo ""
 echo "To stop both: canfar delete $TRAIN_ID $MON_ID"
