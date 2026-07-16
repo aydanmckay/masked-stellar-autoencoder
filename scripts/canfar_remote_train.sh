@@ -2,6 +2,8 @@
 # Runs INSIDE the CANFAR session. Launches MSA pretrain.
 set -eu
 . /etc/astroai-lab/profile.sh
+# pixi activation may override PATH; pin astroai-lab path
+ASTROAI_LAB="/opt/astroai/venv/cadc/bin/astroai-lab"
 
 # pixi/uv default cache dir is /usr/local/share which is not user-writable
 export PIXI_CACHE_DIR="/tmp/pixi-cache"
@@ -13,7 +15,7 @@ cd masked-stellar-autoencoder
 
 SCRATCH_BASE="/scratch/msa-pretrain"
 
-astroai-lab resume msa-gpu
+${ASTROAI_LAB} resume msa-gpu
 pixi install --frozen -e gpu
 mkdir -p "${SCRATCH_BASE}/checkpoints"
 nvidia-smi || true

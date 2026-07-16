@@ -2,6 +2,8 @@
 # Runs INSIDE the CANFAR session. Installs MSA env + stages data.
 set -eu
 . /etc/astroai-lab/profile.sh
+# pixi activation may override PATH; pin astroai-lab path
+ASTROAI_LAB="/opt/astroai/venv/cadc/bin/astroai-lab"
 
 # pixi/uv default cache dir is /usr/local/share which is not user-writable
 export PIXI_CACHE_DIR="/tmp/pixi-cache"
@@ -25,11 +27,11 @@ else
 fi
 
 mkdir -p /arc/projects/k-pop
-astroai-lab save msa-gpu --full
+${ASTROAI_LAB} save msa-gpu --full
 
 mkdir -p "${ARC_BASE}/checkpoints" "${ARC_BASE}/plots"
 
 mkdir -p "${SCRATCH_BASE}"
-astroai-lab data stage "${DATA_SRC}" "${SCRATCH_BASE}/data.h5"
+${ASTROAI_LAB} data stage "${DATA_SRC}" "${SCRATCH_BASE}/data.h5"
 
 echo "=== SETUP COMPLETE ==="
