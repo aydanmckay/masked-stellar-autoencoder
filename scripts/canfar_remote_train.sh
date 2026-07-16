@@ -18,4 +18,4 @@ pixi install -e gpu
 pixi run -e gpu pip install torch --index-url https://download.pytorch.org/whl/cu121
 mkdir -p "${SCRATCH_BASE}/checkpoints"
 nvidia-smi || true
-pixi run -e gpu python -u src/masked_stellar_autoencoder/training/pretrain_msa.py --config configs/pretrain.canfar.yaml
+pixi run -e gpu python -u -m masked_stellar_autoencoder.training.pretrain_msa --config configs/pretrain.canfar.yaml
