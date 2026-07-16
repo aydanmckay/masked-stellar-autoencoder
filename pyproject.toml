@@ -60,7 +60,6 @@ pytest = "*"
 pytest-mock = ">=3.15.1,<4"
 
 [tool.pixi.feature.gpu.target.linux-64.dependencies]
-pytorch-gpu = ">=2.1.0"
 cuda-version = ">=12.4"
 
 [tool.pixi.feature.gpu.tasks]

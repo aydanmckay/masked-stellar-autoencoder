@@ -14,6 +14,8 @@ git clone --depth 1 https://github.com/sfabbro/masked-stellar-autoencoder.git
 cd masked-stellar-autoencoder
 
 pixi install -e gpu
+# CANFAR doesn't expose __cuda to conda; install CUDA pytorch via pip
+pixi run pip install torch --index-url https://download.pytorch.org/whl/cu121
 mkdir -p "${SCRATCH_BASE}/checkpoints"
 nvidia-smi || true
 pixi run python -u training/pretrain_msa.py --config configs/pretrain.canfar.yaml
