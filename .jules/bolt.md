@@ -73,3 +73,7 @@
 ## 2026-06-29 - PyTorch Row-wise Masked Reductions optimization
 **Learning:** In PyTorch, using `.masked_fill` with `.expand_as` in loops for row-wise contrastive metrics (e.g., in `RnCLoss`) is computationally expensive and slow due to repeated implicit broadcasting and memory allocation. We measured that constructing a boolean mask matrix, casting it to float, and using `torch.mv` (matrix-vector multiplication) directly is significantly (~2x) faster and avoids the temporary allocations of `.masked_fill`.
 **Action:** Replace `tensor.expand_as(mask).masked_fill(~mask, 0.0).sum(dim=-1)` patterns inside high-frequency loops with `torch.mv(mask.to(tensor.dtype), tensor)` for computing masked reductions over rows, resulting in immediate ~2x performance gains.
+
+## 2025-05-19 - Avoid intermediate tensor allocation in commutative sum reductions
+**Learning:** In PyTorch high-frequency loops, performing difference operations on full tensors before computing the sum (e.g., `(A - B).sum()`) allocates an intermediate tensor to hold the result of the subtraction. This introduces significant memory allocation overhead.
+**Action:** When computing the sum of a difference in tight loops (e.g., custom loss functions like `RnCLoss`), refactor it to a difference of sums (e.g., `A.sum() - B.sum()`) to avoid the intermediate tensor allocation and improve performance.

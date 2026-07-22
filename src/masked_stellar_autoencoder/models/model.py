@@ -258,8 +258,8 @@ class RnCLoss(nn.Module):
                 row_label_diffs.unsqueeze(0) >= row_label_diffs.unsqueeze(1)
             ).to(exp_logits.dtype)
             row_log_sum_exp = torch.log(torch.mv(row_neg_mask, exp_logits[i]))
-            row_pos_log_probs = logits[i] - row_log_sum_exp
-            loss = loss - row_pos_log_probs.sum() / (n * (n - 1))
+            # ⚡ Bolt: Compute sum of difference as difference of sums to avoid intermediate tensor allocation
+            loss = loss - (logits[i].sum() - row_log_sum_exp.sum()) / (n * (n - 1))
 
         return loss
 
