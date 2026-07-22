@@ -58,7 +58,8 @@ class MaskedGaussianNLLLoss(nn.Module):
         err = var + obs_var
         diff = pred_mean - safe_target
         diff.masked_fill_(~mask, 0.0)
-        diff_squared = diff**2
+        # ⚡ Bolt: Replace ** 2 with explicit multiplication for faster execution
+        diff_squared = diff * diff
 
         # Compute Gaussian NLL
         nll = 0.5 * (torch.log(err) + (diff_squared / err)) + 0.5 * math.log(
@@ -88,7 +89,9 @@ class WeightedMaskedMSELoss(nn.Module):
             masked_input = input[mask]
             masked_target = target[mask]
             masked_weights = weight[mask]
-            return ((masked_input - masked_target) ** 2) * masked_weights
+            # ⚡ Bolt: Replace ** 2 with explicit multiplication for faster execution
+            diff_w = masked_input - masked_target
+            return (diff_w * diff_w) * masked_weights
 
         # ⚡ Bolt: Use .masked_fill instead of boolean indexing for performance
         safe_target = target.masked_fill(~mask, 0.0)
@@ -97,7 +100,8 @@ class WeightedMaskedMSELoss(nn.Module):
         diff = input - safe_target
         diff.masked_fill_(~mask, 0.0)
 
-        masked_error = (diff**2) * safe_weights
+        # ⚡ Bolt: Replace ** 2 with explicit multiplication for faster execution
+        masked_error = (diff * diff) * safe_weights
 
         if self.reduction == "mean":
             return masked_error.sum() / (safe_weights.sum() + self.eps)
@@ -126,7 +130,9 @@ class MaskedMSELoss(nn.Module):
 
         # Compute squared error only where target is not NaN
         diff = input - safe_target
-        masked_error = diff.masked_fill_(~mask, 0.0) ** 2
+        diff.masked_fill_(~mask, 0.0)
+        # ⚡ Bolt: Replace ** 2 with explicit multiplication for faster execution
+        masked_error = diff * diff
 
         if self.reduction == "mean":
             return masked_error.sum() / mask.sum().clamp_min(1)
@@ -361,7 +367,8 @@ class EncoderDecoderLoss(nn.Module):
         # ⚡ Bolt: Replaced torch.where with .masked_fill_ for ~50% faster in-place execution and lower memory usage
         errors = (x_pred - x_true).masked_fill_(~mask.bool(), 0.0)
         if self.cost == "mse":
-            reconstruction_errors = errors**2
+            # ⚡ Bolt: Replace ** 2 with explicit multiplication for faster execution
+            reconstruction_errors = errors * errors
         elif self.cost == "mae":
             reconstruction_errors = abs(errors)
         elif self.cost == "wmse":
@@ -369,7 +376,8 @@ class EncoderDecoderLoss(nn.Module):
                 raise ValueError(
                     "Weight tensor w is required for wmse loss but got None"
                 )
-            reconstruction_errors = w * (errors**2)
+            # ⚡ Bolt: Replace ** 2 with explicit multiplication for faster execution
+            reconstruction_errors = w * (errors * errors)
         elif self.cost == "wmae":
             if w is None:
                 raise ValueError(
@@ -380,7 +388,8 @@ class EncoderDecoderLoss(nn.Module):
             if logvar is None:
                 raise ValueError("logvar required for gnll loss")
             lv = logvar.masked_fill_(~mask.bool(), 0.0)
-            reconstruction_errors = 0.5 * (lv + errors**2 / (lv.exp() + self.eps))
+            # ⚡ Bolt: Replace ** 2 with explicit multiplication for faster execution
+            reconstruction_errors = 0.5 * (lv + errors * errors / (lv.exp() + self.eps))
 
         # Mean squared (or absolute) error over masked elements only — avoids
         # per-column divisors that up-weight rarely masked features in a batch.
@@ -489,7 +498,8 @@ def _sigma_pinball_weights(
 ) -> Tensor:
     """Inverse-variance style weights (B, L) in scaled label-error space."""
     sig = torch.nan_to_num(sigma_scaled, nan=1.0, posinf=1.0, neginf=1.0)
-    w = 1.0 / (sig * sig + float(floor) ** 2)
+    # ⚡ Bolt: Replace ** 2 with explicit multiplication for faster execution
+    w = 1.0 / (sig * sig + float(floor) * float(floor))
     w = w.clamp(max=float(max_w))
     if normalize_batch:
         w = w / (w.mean(dim=0, keepdim=True).clamp_min(1e-8))
@@ -1020,7 +1030,10 @@ class TabResnetWrapper(BaseEstimator):
         nanmask,
     ):
         reconstruction_mask = mask[:, : -self.diff] & nanmask[:, : -self.diff]
-        reconstruction_w = 1.0 / (eX_batch[:, : -self.diff] ** 2 + 1e-8)
+        # ⚡ Bolt: Replace ** 2 with explicit multiplication for faster execution
+        reconstruction_w = 1.0 / (
+            (eX_batch[:, : -self.diff] * eX_batch[:, : -self.diff]) + 1e-8
+        )
 
         logvar = getattr(self.model, "_last_logvar", None)
         return (
@@ -1226,7 +1239,11 @@ class TabResnetWrapper(BaseEstimator):
                         X_batch[:, : -self.diff],
                         X_reconstructed,
                         reconstruction_mask,
-                        1.0 / (eX_batch[:, : -self.diff] ** 2 + 1e-8),
+                        1.0
+                        / (
+                            (eX_batch[:, : -self.diff] * eX_batch[:, : -self.diff])
+                            + 1e-8
+                        ),
                         logvar=logvar,
                     )
 
@@ -1345,7 +1362,10 @@ class TabResnetWrapper(BaseEstimator):
 
     def _compute_base_loss(self, y_batch, y_head, batch, ctx: FinetuneContext):
         if ctx.ftlf in ("wmse", "wgnll"):
-            return ctx.criterion(y_batch, y_head, 1 / (batch[3] + 1e-5) ** 2)
+            # ⚡ Bolt: Replace ** 2 with explicit multiplication for faster execution
+            return ctx.criterion(
+                y_batch, y_head, 1 / ((batch[3] + 1e-5) * (batch[3] + 1e-5))
+            )
         elif ctx.ftlf in ("mse", "mae"):
             return ctx.criterion(y_batch, y_head)
         elif ctx.ftlf == "quantile":
@@ -1387,9 +1407,14 @@ class TabResnetWrapper(BaseEstimator):
             sigma_phot = None
 
         var = (
-            sigma_gaia**2
-            + (sigma_phot**2 if sigma_phot is not None else 0)
-            + (ctx.parallax_sigma_floor**2 if ctx.parallax_sigma_floor > 0 else 0)
+            # ⚡ Bolt: Replace ** 2 with explicit multiplication for faster execution
+            sigma_gaia * sigma_gaia
+            + (sigma_phot * sigma_phot if sigma_phot is not None else 0)
+            + (
+                (ctx.parallax_sigma_floor * ctx.parallax_sigma_floor)
+                if ctx.parallax_sigma_floor > 0
+                else 0
+            )
         )
 
         mle_mask = (
@@ -1401,7 +1426,9 @@ class TabResnetWrapper(BaseEstimator):
         safe_pi_gaia = torch.nan_to_num(pi_gaia, nan=0.0)
         safe_var = torch.nan_to_num(var, nan=1.0)
 
-        return (((safe_mu_phot - safe_pi_gaia) ** 2) / (safe_var + 1e-8)).masked_fill(
+        # ⚡ Bolt: Replace ** 2 with explicit multiplication for faster execution
+        diff_mle = safe_mu_phot - safe_pi_gaia
+        return ((diff_mle * diff_mle) / (safe_var + 1e-8)).masked_fill(
             ~mle_mask, 0.0
         ).sum() / mle_mask.sum().clamp_min(1)
 
@@ -1473,7 +1500,10 @@ class TabResnetWrapper(BaseEstimator):
 
         if ctx.multitask:
             reconstruction_mask = mask[:, : -self.diff] & nanmask[:, : -self.diff]
-            reconstruction_w = 1.0 / (eX_batch[:, : -self.diff] ** 2 + 1e-8)
+            # ⚡ Bolt: Replace ** 2 with explicit multiplication for faster execution
+            reconstruction_w = 1.0 / (
+                (eX_batch[:, : -self.diff] * eX_batch[:, : -self.diff]) + 1e-8
+            )
             rec = self._rec_loss_fn(
                 X_batch[:, : -self.diff],
                 X_reconstructed,
