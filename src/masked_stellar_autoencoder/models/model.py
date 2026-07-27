@@ -482,11 +482,12 @@ def quantile_loss(
         return loss.masked_fill(~mask_unsq, 0.0).sum() / w_eff_sum.clamp_min(1e-8)
     else:
         # Mask the weights so invalid entries don't contribute to the denominator
-        w_eff = w_eff.expand_as(loss).masked_fill(~mask_unsq, 0.0)
+        # ⚡ Bolt: Exploit automatic broadcasting and multiply the denominator by the broadcast dimension (preds.shape[2]) to avoid allocating a full-shape intermediate tensor for w_eff
+        w_eff = w_eff.masked_fill(~mask_unsq, 0.0)
 
-    return (loss.masked_fill(~mask_unsq, 0.0) * w_eff).sum() / w_eff.sum().clamp_min(
-        1e-8
-    )
+    return (loss.masked_fill(~mask_unsq, 0.0) * w_eff).sum() / (
+        w_eff.sum() * preds.shape[2]
+    ).clamp_min(1e-8)
 
 
 def _sigma_pinball_weights(

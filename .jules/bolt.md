@@ -85,3 +85,7 @@
 ## 2026-07-22 - Avoid `** 2` for squaring tensors
 **Learning:** In PyTorch, using the power operator `** 2` (or `torch.pow(tensor, 2)`) is significantly slower than direct element-wise multiplication `tensor * tensor`. This is because `** 2` dispatches to a general power function that is not optimized for simple squaring, whereas `*` is a highly optimized fundamental operation. We benchmarked this and found `tensor * tensor` to be ~20-30% faster in both forward and backward passes.
 **Action:** When computing squared errors or squaring values in custom loss functions (e.g., `diff ** 2`), always replace it with direct multiplication (e.g., `diff * diff`). This provides a free performance boost without sacrificing readability.
+
+## 2026-10-27 - Optimize `.expand_as()` in weighted loss reductions
+**Learning:** Explicitly expanding lower-dimensional weight tensors (e.g., `w_eff.expand_as(loss)`) before applying `.masked_fill` and `.sum()` creates a full-shape intermediate tensor, wasting memory and allocation time. However, simply removing `.expand_as` breaks the denominator reduction because the unexpanded tensor has fewer elements.
+**Action:** To avoid allocating the intermediate expanded tensor while preserving mathematical correctness, apply `.masked_fill` on the smaller unexpanded tensor, rely on native automatic broadcasting for the numerator element-wise multiplication, and explicitly multiply the denominator's `.sum()` by the size of the omitted broadcast dimension (e.g., `w_eff.sum() * C`).
