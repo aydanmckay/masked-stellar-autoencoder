@@ -123,6 +123,7 @@ def parallax_label_error_asinh(
     e = np.asarray(e_pi_mas, dtype=np.float64)
     out = np.full(pi.shape, np.nan, dtype=np.float64)
     m = np.isfinite(pi) & np.isfinite(e)
-    denom = scale_mas * np.sqrt((pi[m] / scale_mas) ** 2 + 1.0)
+    pi_scaled = pi[m] / scale_mas
+    denom = scale_mas * np.sqrt(pi_scaled * pi_scaled + 1.0)
     out[m] = e[m] / np.maximum(denom, 1e-12)
     return out.astype(np.float32)
