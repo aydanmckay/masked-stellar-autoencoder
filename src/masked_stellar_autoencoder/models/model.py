@@ -70,7 +70,7 @@ class MaskedGaussianNLLLoss(nn.Module):
         nll = nll.masked_fill_(inv_mask, 0.0)
 
         if self.reduction == "mean":
-            return nll.sum() / mask.sum().clamp_min(1)
+            return nll.sum() / mask.sum().to(dtype=nll.dtype).clamp_min(1.0)
         elif self.reduction == "sum":
             return nll.sum()
         else:
@@ -140,7 +140,9 @@ class MaskedMSELoss(nn.Module):
         masked_error = diff * diff
 
         if self.reduction == "mean":
-            return masked_error.sum() / mask.sum().clamp_min(1)
+            return masked_error.sum() / mask.sum().to(
+                dtype=masked_error.dtype
+            ).clamp_min(1.0)
         elif self.reduction == "sum":
             return masked_error.sum()
         else:
@@ -170,7 +172,9 @@ class MaskedMAELoss(nn.Module):
         masked_error = torch.abs(diff.masked_fill_(inv_mask, 0.0))
 
         if self.reduction == "mean":
-            return masked_error.sum() / mask.sum().clamp_min(1)
+            return masked_error.sum() / mask.sum().to(
+                dtype=masked_error.dtype
+            ).clamp_min(1.0)
         elif self.reduction == "sum":
             return masked_error.sum()
         else:
@@ -472,7 +476,7 @@ def quantile_loss(
     if label_weights is None and sample_weight is None:
         # ⚡ Bolt: Replace dynamic boolean indexing with out-of-place masked_fill for ~2x faster execution and lower memory usage
         return loss.masked_fill(inv_mask_unsq, 0.0).sum() / (
-            mask.sum().clamp_min(1) * preds.shape[2]
+            mask.sum().to(dtype=loss.dtype).clamp_min(1.0) * preds.shape[2]
         )
 
     # ⚡ Bolt: Delay allocation of float mask tensor until after unweighted fast-path
@@ -1440,7 +1444,7 @@ class TabResnetWrapper(BaseEstimator):
         diff_mle = safe_mu_phot - safe_pi_gaia
         return ((diff_mle * diff_mle) / (safe_var + 1e-8)).masked_fill(
             ~mle_mask, 0.0
-        ).sum() / mle_mask.sum().clamp_min(1)
+        ).sum() / mle_mask.sum().to(dtype=diff_mle.dtype).clamp_min(1.0)
 
     def _apply_parallax_masked_forward(
         self, X_masked, y_batch, y_raw, ctx: FinetuneContext

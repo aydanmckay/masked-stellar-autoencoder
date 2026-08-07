@@ -93,3 +93,6 @@
 ## 2026-10-28 - Pre-compute inverse masks and use sequential masking
 **Learning:** Repeatedly evaluating `~mask` or combining boolean tensors with bitwise operators (like `~nan_mask | combined_mask`) directly inside `.masked_fill()` / `.masked_fill_()` allocates a new full-shape intermediate boolean tensor per call.
 **Action:** Pre-compute `inv_mask = ~mask` and reuse it across multiple `.masked_fill` calls. For combining masks, apply sequential `.masked_fill_()` instead of bitwise OR.
+## 2026-10-29 - Avoid casting int64 to float implicitly in PyTorch clamp_min
+**Learning:** PyTorch sometimes throws runtime errors when calling `.clamp_min(float_val)` directly on an `int64` tensor resulting from a boolean mask sum without explicit casting to a float dtype, depending on the execution context (like GPU execution).
+**Action:** Always call `.to(dtype)` to explicitly cast the integer scalar/reduced result of `mask.sum()` to a float tensor before chaining operations like `.clamp_min(eps)` that require float arguments to ensure robustness and prevent runtime errors.
