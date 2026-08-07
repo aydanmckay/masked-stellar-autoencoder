@@ -467,8 +467,7 @@ def quantile_loss(
     # ⚡ Bolt: Sanitize NaN targets to 0.0 out-of-place to prevent NaN propagation to gradients
     inv_mask = ~mask
     safe_target = target.masked_fill(inv_mask, 0.0).unsqueeze(2)
-    mask_unsq = mask.unsqueeze(2)
-    inv_mask_unsq = ~mask_unsq
+    inv_mask_unsq = inv_mask.unsqueeze(2)
 
     error = safe_target - preds
     loss = torch.max((quantiles - 1) * error, quantiles * error)
