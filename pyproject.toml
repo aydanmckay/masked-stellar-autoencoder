@@ -43,7 +43,7 @@ ci = "SKIP=ci-tests pre-commit run --all-files --color always && pytest tests/"
 gpu = { features = ["gpu"] }
 
 [tool.pixi.dependencies]
-python = "3.12.*"
+python = "3.13.*"
 pytorch = ">=2.1.0"
 numpy = ">=1.25.0"
 astropy = ">=6.0.0"
