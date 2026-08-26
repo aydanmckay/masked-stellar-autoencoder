@@ -6,26 +6,26 @@ The **Masked Stellar Autoencoder (MSA)** is a deep learning foundation model des
 
 ## Features
 
-- **Masked autoencoding**: Learns to reconstruct missing or masked spectral regions, improving robustness to incomplete data.  
-- **Residual encoder–decoder architecture**: Captures nonlinear stellar features while preserving fine spectral details.  
-- **Multi-label fine-tuning**: Predicts stellar parameters including:  
-  - Effective temperature (*T*<sub>eff</sub>)  
-  - Metallicity ([Fe/H])  
-  - Alpha enhancement ([α/Fe])  
-  - Surface gravity (*log g*)  
+- **Masked autoencoding**: Learns to reconstruct missing or masked spectral regions, improving robustness to incomplete data.
+- **Residual encoder–decoder architecture**: Captures nonlinear stellar features while preserving fine spectral details.
+- **Multi-label fine-tuning**: Predicts stellar parameters including:
+  - Effective temperature (*T*<sub>eff</sub>)
+  - Metallicity ([Fe/H])
+  - Alpha enhancement ([α/Fe])
+  - Surface gravity (*log g*)
   - Stellar age
-  - Parallax ($\varpi$)  
-- **Quantile regression**: Provides uncertainty-aware predictions with enforced quantile ordering at 16<sup>th</sup>, 50<sup>th</sup>, and 84<sup>th</sup> intervals.  
-- **Applications beyond Gaia magnitude limits**: Infers stellar parameters even for stars too faint to have low-resolution spectra in *Gaia* DR3.  
+  - Parallax ($\varpi$)
+- **Quantile regression**: Provides uncertainty-aware predictions with enforced quantile ordering at 16<sup>th</sup>, 50<sup>th</sup>, and 84<sup>th</sup> intervals.
+- **Applications beyond Gaia magnitude limits**: Infers stellar parameters even for stars too faint to have low-resolution spectra in *Gaia* DR3.
 
 ---
 
 ## Scientific Motivation
 
-- **Galactic archaeology**: Use stellar parameters to trace the formation and evolution of the Milky Way.  
-- **Ultra metal-poor stars**: Identify and characterize ancient stellar populations.  
-- **Dark matter dominated systems**: Search for chemo-dynamical signatures of dwarf galaxies and globular clusters.  
-- **Survey integration**: Bridge *Gaia* with complementary spectroscopic surveys (APOGEE, GALAH, etc.).  
+- **Galactic archaeology**: Use stellar parameters to trace the formation and evolution of the Milky Way.
+- **Ultra metal-poor stars**: Identify and characterize ancient stellar populations.
+- **Dark matter dominated systems**: Search for chemo-dynamical signatures of dwarf galaxies and globular clusters.
+- **Survey integration**: Bridge *Gaia* with complementary spectroscopic surveys (APOGEE, GALAH, etc.).
 
 ---
 
@@ -72,9 +72,30 @@ python training/pretrain_msa.py --config configs/pretrain.yaml
 ```bash
 python training/finetune_msa.py --config configs/finetune.yaml
 ```
-### Evaluation
+### Alliance Narval / Slurm
 
-Evaluation is performed in notebooks in notebooks/
+See [batch_scripts/README.md](batch_scripts/README.md) for `narval_pretrain.slurm`, `narval_finetune.slurm`, venv setup, and `configs/*.narval.example.yaml` path templates (`$SCRATCH/...`).
+
+### Methodology (parallax, distances, dust)
+
+See [docs/METHODOLOGY.md](docs/METHODOLOGY.md) for the frozen statistical policy and YAML `preprocessing` keys.
+### Evaluation (paper tables)
+
+After fine-tuning, export metrics and a LaTeX fragment with:
+
+```bash
+PYTHONPATH=. python training/eval_ensemble.py --config configs/finetune.yaml \
+  --checkpoints path/to/member1.pth path/to/member2.pth --out results/my_run
+```
+
+See [RUNLOG.md](RUNLOG.md) for the paper–code gap audit and [docs/experiment_matrix.md](docs/experiment_matrix.md) for the ablation protocol. Record pilot multitask comparisons in [docs/EXPERIMENT_LOG.md](docs/EXPERIMENT_LOG.md).
+
+### Tests (optional)
+
+```bash
+pip install -r requirements-dev.txt
+PYTHONPATH=. pytest tests/test_msa_training_invariants.py -v
+```
 
 ---
 

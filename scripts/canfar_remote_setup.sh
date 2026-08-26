@@ -1,0 +1,33 @@
+#!/bin/bash
+# Runs INSIDE the CANFAR session. Installs MSA env + stages data.
+set -eu
+. /etc/astroai-lab/profile.sh
+
+REPO="sfabbro/masked-stellar-autoencoder"
+ARC_BASE="/arc/projects/k-pop/msa_pretrain"
+SCRATCH_BASE="/scratch/msa-pretrain"
+
+# pixi/uv default cache dir is /usr/local/share which is not user-writable
+export PIXI_CACHE_DIR="/tmp/pixi-cache"
+export PIXI_HOME="${SCRATCH_BASE}/.pixi"
+
+cd /srcdir
+git clone --depth 1 "https://github.com/${REPO}.git"
+cd masked-stellar-autoencoder
+
+if nvidia-smi >/dev/null 2>&1; then
+  echo "CUDA detected, installing GPU environment..."
+  pixi install --frozen -e gpu
+else
+  echo "WARNING: No CUDA detected — installing CPU-only environment"
+  pixi install --frozen -e default
+fi
+
+# pixi cache lives in /tmp (ephemeral local storage, 200Gi pod limit).
+# Clean it immediately — the installed env is in PIXI_HOME on /scratch.
+rm -rf "${PIXI_CACHE_DIR}"
+
+mkdir -p /arc/projects/k-pop
+mkdir -p "${ARC_BASE}/checkpoints" "${ARC_BASE}/plots"
+
+echo "=== SETUP COMPLETE ==="

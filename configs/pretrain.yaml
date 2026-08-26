@@ -47,17 +47,33 @@ model:
   norm: 'layer'
   rtdl_embed: 16
   decoder_dims: [256, 512, 1024]  # Optional: asymmetric decoder (default: mirrors encoder)
+  # Architecture: 'resnet' (addition skips) or 'dense' (concatenation skips)
+  encoder_type: 'resnet'
+  # DenseNet options (only used when encoder_type: 'dense')
+  growth_rate: 64
+  num_dense_layers: 8
+  # L2-normalize the latent space
+  cosine_latent: false
 
 training:
   xp_masking_ratio: 0.9
   m_masking_ratio: 0.6
+  # Fraction of rows per batch with XP coeffs [5:115) forced fully masked (extra mixture toward XP-off).
+  mask_mixture_xp_full_frac: 0.0
   lr: 0.00001
   weight_decay: 0.00001
   lasso: 0
   optimizer: 'adamw'
-  loss_fn: 'mae'  # Options: 'mse', 'mae', 'wmse' (error-weighted MSE), 'wmae'
+  loss_fn: 'mae'  # Options: 'mse', 'mae', 'wmse' (error-weighted MSE), 'wmae', 'gnll'
+  # gnll: heteroscedastic Gaussian NLL (decoder outputs mean+logvar, requires heteroscedastic: true)
+  heteroscedastic: false
+  # When pert_features is true: scale jitter on E(B-V) (0.0 disables EBV noise only)
+  pert_ebv_scale: 1.0
   mini_batch_size: 32768
   epochs: 100
+  scheduler_cosine_t0: 10
+  scheduler_cosine_t_mult: 2
+  scheduler_eta_min_factor: 0.01
   presaved: masked_stellar_autoencoder_220M.pth
   # pert_features: false  # Optional: add Gaussian noise augmentation scaled by errors (default: false)
   # pert_scale: 1.0  # Optional: noise scale factor (default: 1.0)

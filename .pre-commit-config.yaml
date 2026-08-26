@@ -1,0 +1,57 @@
+default_install_hook_types: [pre-commit, pre-push]
+
+repos:
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v5.0.0
+    hooks:
+      - id: trailing-whitespace
+      - id: end-of-file-fixer
+      - id: check-yaml
+        args: [--unsafe]
+      - id: check-toml
+      - id: check-added-large-files
+        args: ['--maxkb=5000']
+      - id: check-merge-conflict
+      - id: debug-statements
+
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.9.10
+    hooks:
+      - id: ruff
+        args: [--fix, --exit-non-zero-on-fix]
+      - id: ruff-format
+
+#  - repo: https://github.com/pre-commit/mirrors-mypy
+#    rev: v1.15.0
+#    hooks:
+#      - id: mypy
+#        additional_dependencies: [types-requests, types-PyYAML, types-tabulate]
+#        args: [--ignore-missing-imports]
+
+  - repo: https://github.com/codespell-project/codespell
+    rev: v2.3.0
+    hooks:
+      - id: codespell
+        additional_dependencies: [tomli]
+        args: ["--ignore-words-list", "nd,th,te,mape,ot,aci,fpr,ois,aussian,numer,commun,multline,als,activ,strat,oen,suh,vas,mye,fo,hte,ue,nax,ags,bu,acn,vew,ecept,ure,ege,edn,whe,inh,ths,proceedure,eazy,clen,acess,astroid,degress,som,sompz,slac,ges,recal,litterature,wee,sme,vai,wit,noo,tru,ofo,tne,wel,egde,meu,onl,nwe,tey,coo,hel,fwe,fpt,wrte,nce"]
+
+  - repo: local
+    hooks:
+      # Commit: lint/format/codespell above, then tests (full `pixi run ci` is pre-push only
+      # so nested `pre-commit run` inside `ci` never loops).
+      - id: ci-tests
+        name: CI tests (pixi run --frozen test)
+        entry: pixi run --frozen test
+        language: system
+        pass_filenames: false
+        always_run: true
+        require_serial: true
+        stages: [pre-commit]
+      - id: ci-parity
+        name: CI parity (pixi run --frozen ci)
+        entry: pixi run --frozen ci
+        language: system
+        pass_filenames: false
+        always_run: true
+        require_serial: true
+        stages: [pre-push]

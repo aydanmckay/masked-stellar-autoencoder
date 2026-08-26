@@ -49,10 +49,18 @@ model:
   rtdl_embed: 16
   # decoder_dims: [256, 512, 1024]  # Optional: asymmetric decoder (default: mirrors encoder)
   saved_weights: '/arc/home/aydanmckay/bprp_mae/.model_instances/checkpoint_60_fullmodelrealmags0605.pth'
+  # Architecture: 'resnet' (addition skips) or 'dense' (concatenation skips)
+  encoder_type: 'resnet'
+  # DenseNet options (only used when encoder_type: 'dense')
+  growth_rate: 64
+  num_dense_layers: 8
+  # L2-normalize the latent space
+  cosine_latent: false
 
 training:
   xp_masking_ratio: 0.9
   m_masking_ratio: 0.6
+  mask_mixture_xp_full_frac: 0.0
   lr: 0.00001
   weight_decay: 0.00001
   lasso: 0
@@ -60,25 +68,74 @@ training:
   loss_fn: 'mae'
   mini_batch_size: 1024
   epochs: 100
+  # CosineAnnealingWarmRestarts: one scheduler.step() per pretrain epoch
+  scheduler_cosine_t0: 10
+  scheduler_cosine_t_mult: 2
+  scheduler_eta_min_factor: 0.01   # eta_min = lr * this
+
+# Parallax / distance (see docs/METHODOLOGY.md). Defaults preserve legacy behaviour.
+preprocessing:
+  astrometry_input_policy: legacy_raw   # legacy_raw | snr_clipped
+  astrometry_snr_cap: 10.0
+  parallax_target_space: asinh_mas     # linear_mas | log10_mas | asinh_mas
+  parallax_floor_mas: 1.0e-4
+  teff_target_space: log10              # linear | log10
+  xp_feature_scaling: global            # robust | global (preserves XP spectral trace covariance)
+  label_scaler: power                   # standard | robust | power (spectroscopic labels + parallax target scaler)
 
 finetuning:
   num_epochs: 101
-  mini_batch: 512 
+  mini_batch: 512
   linearprobe: false
   mask: true
+  xp_masking_ratio: 0.3
+  m_masking_ratio: 0.3
   multitask: true
   rncloss: false
   lr: 0.0001
+  # Fine-tune encoder LR: null → use training.lr (same as TabResnetWrapper init)
+  encoder_lr: null
+  # LambdaLR multipliers (see docs/METHODOLOGY.md): encoder base^(epoch); head base^(epoch // step)
+  lr_scheduler_encoder_decay: 0.95
+  lr_scheduler_head_decay: 0.5
+  lr_scheduler_head_step_epochs: 10
   opt: 'adamw'
-  activ: 'relu'
+  active: 'relu'
   l2: 0.0
   lf: 'quantile'
   pert_features: true
+  pert_scale: 1.0
+  # Scale jitter on Schlegel E(B-V) only (1.0 = same as other features; 0.0 = no EBV jitter)
+  pert_ebv_scale: 1.0
   pert_labels: false
   ensemble: false
   seed: 42
   pert_seed: 42
   ensemble_path: 'finetuning-checkpoint-here.pth'
+  # Match paper Eq. total loss: lambda_pred * L_pred + lambda_rec * L_rec
+  lambda_pred: 0.8
+  lambda_rec: 0.2
+  ensemble_seed: 42
+  ensemble_size: 20
+  # Optional: [Teff, log g, [Fe/H], [alpha/Fe], age, parallax] — up-weight [Fe/H] (index 2) for metal-poor focus
+  quantile_label_weights: null
+  # Heteroscedastic pinball: weight ~ 1/(sigma_scaled^2 + floor^2), clamped; only when lf: quantile
+  quantile_use_label_errors: false
+  quantile_sigma_weight_floor: 1.0e-6
+  quantile_sigma_weight_max: 1.0e6
+  quantile_sigma_weight_normalize_batch: true
+  # Encoder warmup: freeze encoder for first N epochs, then unfreeze
+  encoder_warmup_epochs: 0
+  # Optional: confident labels + preserve rare [Fe/H] in splits; enable for VMP-focused training
+  metal_poor:
+    stratify_feh: false
+    feh_stratify_bins: [-10.0, -2.0, -1.0, 0.0, 10.0]
+    require_finite_e_fe_h: false
+    max_e_fe_h: null
+    min_teff: null
+    max_teff: null
+    augment_below_feh: null
+    augment_fraction: 0.0
 
 saving:
   model_str: 'masked_stellar_autoencoder_ft_10M.pth'

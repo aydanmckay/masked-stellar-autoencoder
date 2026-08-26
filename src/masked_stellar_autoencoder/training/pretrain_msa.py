@@ -1,0 +1,164 @@
+import argparse
+
+import h5py
+import numpy as np
+import yaml
+from sklearn.preprocessing import RobustScaler
+
+from masked_stellar_autoencoder.models.model import TabResnetWrapper, make_model
+
+from .config_paths import expand_config_paths
+from .feature_noise import pert_channel_scale_vector
+
+
+def main():
+    parser = argparse.ArgumentParser(description="Train MSA")
+    parser.add_argument(
+        "--config", type=str, required=True, help="Path to config YAML file"
+    )
+    args = parser.parse_args()
+
+    # load YAML
+    with open(args.config) as f:
+        config = yaml.safe_load(f)
+    expand_config_paths(config)
+
+    # loading the pretraining file to pass to the wrapper
+    pretrain_file = h5py.File(config["data"]["datafile"])
+
+    # splitting up the keys
+    keys_valid = config["data"]["valid_keys"]
+    keys_train = [item for item in list(pretrain_file.keys()) if item not in keys_valid]
+
+    featurescaler = RobustScaler()
+    # as a test since there currently isn't a finetuning set
+    X = pretrain_file[keys_train[0]][:]
+
+    cols = config["data"]["feature_cols"]
+
+    X = np.column_stack([TabResnetWrapper._clean_column(col, X[col]) for col in cols])
+
+    # Validate data before fitting scaler
+    if np.any(np.isnan(X)) or np.any(np.isinf(X)):
+        print("Warning: Invalid values detected in training data before scaling")
+        # Remove rows with all NaN values
+        valid_rows = ~np.all(np.isnan(X), axis=1)
+        X = X[valid_rows]
+        if len(X) == 0:
+            raise ValueError("No valid data remaining after removing NaN rows")
+
+    featurescaler.fit(X)
+
+    # Validate scaler was fitted properly
+    if not hasattr(featurescaler, "scale_") or featurescaler.scale_ is None:
+        raise ValueError("Scaler failed to fit properly - scale_ attribute missing")
+
+    del X
+
+    blocks_dims = config["model"]["layer_dims"]
+    pt_activ = config["model"]["pt_activ_func"]
+    d_embed = config["model"]["rtdl_embed"]
+    norm = config["model"]["norm"]
+    decoder_dims = config["model"].get(
+        "decoder_dims", None
+    )  # Optional asymmetric decoder
+
+    recon_cols = config["data"]["recon_cols"]
+
+    model = make_model(
+        len(cols),
+        blocks_dims,
+        len(recon_cols),
+        pt_activ,
+        d_embed,
+        norm,
+        decoder_dims=decoder_dims,
+        encoder_type=config["model"].get("encoder_type", "resnet"),
+        growth_rate=config["model"].get("growth_rate", 64),
+        num_dense_layers=config["model"].get("num_dense_layers", 8),
+        cosine_latent=config["model"].get("cosine_latent", False),
+        heteroscedastic=config["training"].get("heteroscedastic", False),
+    )
+
+    xp_ratio = config["training"]["xp_masking_ratio"]
+    m_ratio = config["training"]["m_masking_ratio"]
+    lr = config["training"]["lr"]
+    wd = config["training"]["weight_decay"]
+    lasso = config["training"]["lasso"]
+    opt = config["training"]["optimizer"]
+    lf = config["training"]["loss_fn"]
+    pert_features = config["training"].get(
+        "pert_features", False
+    )  # Optional data augmentation
+    pert_scale = config["training"].get("pert_scale", 1.0)  # Noise scale factor
+    pert_ch = pert_channel_scale_vector(
+        cols, pert_ebv_scale=float(config["training"].get("pert_ebv_scale", 1.0))
+    )
+
+    pt_save_file = config["saving"]["model_str"]
+    pt_log_file = config["saving"]["log_file"]
+    ci = config["saving"]["checkpoint_interval"]
+
+    error_cols = config["data"]["error_cols"]
+
+    # Initialize the pretraining wrapper
+    pretrain_wrapper = TabResnetWrapper(
+        model=model,
+        datafile=pretrain_file,
+        scaler=featurescaler,
+        feature_cols=cols,
+        error_cols=error_cols,
+        recon_cols=recon_cols,
+        xp_masking_ratio=xp_ratio,
+        m_masking_ratio=m_ratio,
+        latent_size=blocks_dims[-1],
+        lr=lr,
+        optimizer=opt,
+        wd=wd,
+        lasso=lasso,
+        lf=lf,
+        pt_save_str=pt_save_file,
+        pt_log_file=pt_log_file,
+        checkpoint_interval=ci,
+        pert_features=pert_features,
+        pert_scale=pert_scale,
+        pert_channel_scale=pert_ch,
+        mask_mixture_xp_full_frac=float(
+            config["training"].get("mask_mixture_xp_full_frac", 0.0)
+        ),
+        scheduler_cosine_t0=int(config["training"].get("scheduler_cosine_t0", 10)),
+        scheduler_cosine_t_mult=int(
+            config["training"].get("scheduler_cosine_t_mult", 2)
+        ),
+        scheduler_eta_min_factor=float(
+            config["training"].get("scheduler_eta_min_factor", 0.01)
+        ),
+    )
+
+    pretrain_wrapper._configure_canfar_output(
+        metrics_file=config["saving"].get("metrics_file"),
+        residual_stats_file=config["saving"].get("residual_stats_file"),
+        arc_checkpoint_dir=config["saving"].get("arc_checkpoint_dir"),
+        arc_sync_interval=config["saving"].get("arc_sync_interval", 5),
+    )
+
+    epochs = config["training"]["epochs"]
+    batch = config["training"]["mini_batch_size"]
+    presaved = config["training"].get("presaved")
+    if presaved is None or presaved == "":
+        presaved = None
+
+    # pretrain, train, and predict
+    pretrain_wrapper.pretrain_hdf(
+        keys_train,
+        num_epochs=epochs,
+        val_keys=keys_valid,
+        mini_batch=batch,
+        pretrained=presaved,
+    )
+
+    pretrain_file.close()
+
+
+if __name__ == "__main__":
+    main()

@@ -1,0 +1,119 @@
+# Example for Alliance Narval: set export SCRATCH=/scratch/$USER (or your allocation path)
+# before sbatch. Paths use env expansion via training/config_paths.py.
+data:
+  datafile: '$SCRATCH/msa/data/pretrain_ssl.h5'
+  valid_keys: ['sslset11_part0','sslset14_part0','sslset2_part0','sslset5_part0','sslset20_part0']
+  feature_cols: ['W1','W2','G','BP','RP','bp_1','bp_2','bp_3','bp_4','bp_5','bp_6','bp_7','bp_8','bp_9',
+                 'bp_10','bp_11','bp_12','bp_13','bp_14','bp_15','bp_16','bp_17','bp_18','bp_19','bp_20',
+                 'bp_21','bp_22','bp_23','bp_24','bp_25','bp_26','bp_27','bp_28','bp_29','bp_30','bp_31',
+                 'bp_32','bp_33','bp_34','bp_35','bp_36','bp_37','bp_38','bp_39','bp_40','bp_41','bp_42',
+                 'bp_43','bp_44','bp_45','bp_46','bp_47','bp_48','bp_49','bp_50','bp_51','bp_52','bp_53',
+                 'bp_54','bp_55','rp_1','rp_2','rp_3','rp_4','rp_5','rp_6','rp_7','rp_8','rp_9','rp_10',
+                 'rp_11','rp_12','rp_13','rp_14','rp_15','rp_16','rp_17','rp_18','rp_19','rp_20','rp_21',
+                 'rp_22','rp_23','rp_24','rp_25','rp_26','rp_27','rp_28','rp_29','rp_30','rp_31','rp_32',
+                 'rp_33','rp_34','rp_35','rp_36','rp_37','rp_38','rp_39','rp_40','rp_41','rp_42','rp_43',
+                 'rp_44','rp_45','rp_46','rp_47','rp_48','rp_49','rp_50','rp_51','rp_52','rp_53','rp_54',
+                 'rp_55','U_SMSS','V_SMSS','G_SMSS','R_SMSS','I_SMSS','Z_SMSS','U_SDSS','G_SDSS','R_SDSS',
+                 'I_SDSS','Z_SDSS','G_PS1','R_PS1','I_PS1','Z_PS1','Y_PS1','J','H','KS','PARALLAX','EBV',
+                 'pmra','pmdec']
+  error_cols: ['W1','W2','G','BP','RP','bp_1','bp_2','bp_3','bp_4','bp_5','bp_6','bp_7','bp_8','bp_9',
+               'bp_10','bp_11','bp_12','bp_13','bp_14','bp_15','bp_16','bp_17','bp_18','bp_19','bp_20',
+               'bp_21','bp_22','bp_23','bp_24','bp_25','bp_26','bp_27','bp_28','bp_29','bp_30','bp_31',
+               'bp_32','bp_33','bp_34','bp_35','bp_36','bp_37','bp_38','bp_39','bp_40','bp_41','bp_42',
+               'bp_43','bp_44','bp_45','bp_46','bp_47','bp_48','bp_49','bp_50','bp_51','bp_52','bp_53',
+               'bp_54','bp_55','rp_1','rp_2','rp_3','rp_4','rp_5','rp_6','rp_7','rp_8','rp_9','rp_10',
+               'rp_11','rp_12','rp_13','rp_14','rp_15','rp_16','rp_17','rp_18','rp_19','rp_20','rp_21',
+               'rp_22','rp_23','rp_24','rp_25','rp_26','rp_27','rp_28','rp_29','rp_30','rp_31','rp_32',
+               'rp_33','rp_34','rp_35','rp_36','rp_37','rp_38','rp_39','rp_40','rp_41','rp_42','rp_43',
+               'rp_44','rp_45','rp_46','rp_47','rp_48','rp_49','rp_50','rp_51','rp_52','rp_53','rp_54',
+               'rp_55','U_SMSS','V_SMSS','G_SMSS','R_SMSS','I_SMSS','Z_SMSS','U_SDSS','G_SDSS','R_SDSS',
+               'I_SDSS','Z_SDSS','G_PS1','R_PS1','I_PS1','Z_PS1','Y_PS1','J','H','KS','PARALLAX','EBV',
+               'pmra','pmdec']
+  recon_cols: ['W1','W2','G','BP','RP','bp_1','bp_2','bp_3','bp_4','bp_5','bp_6','bp_7','bp_8','bp_9',
+               'bp_10','bp_11','bp_12','bp_13','bp_14','bp_15','bp_16','bp_17','bp_18','bp_19','bp_20',
+               'bp_21','bp_22','bp_23','bp_24','bp_25','bp_26','bp_27','bp_28','bp_29','bp_30','bp_31',
+               'bp_32','bp_33','bp_34','bp_35','bp_36','bp_37','bp_38','bp_39','bp_40','bp_41','bp_42',
+               'bp_43','bp_44','bp_45','bp_46','bp_47','bp_48','bp_49','bp_50','bp_51','bp_52','bp_53',
+               'bp_54','bp_55','rp_1','rp_2','rp_3','rp_4','rp_5','rp_6','rp_7','rp_8','rp_9','rp_10',
+               'rp_11','rp_12','rp_13','rp_14','rp_15','rp_16','rp_17','rp_18','rp_19','rp_20','rp_21',
+               'rp_22','rp_23','rp_24','rp_25','rp_26','rp_27','rp_28','rp_29','rp_30','rp_31','rp_32',
+               'rp_33','rp_34','rp_35','rp_36','rp_37','rp_38','rp_39','rp_40','rp_41','rp_42','rp_43',
+               'rp_44','rp_45','rp_46','rp_47','rp_48','rp_49','rp_50','rp_51','rp_52','rp_53','rp_54',
+               'rp_55','U_SMSS','V_SMSS','G_SMSS','R_SMSS','I_SMSS','Z_SMSS','U_SDSS','G_SDSS','R_SDSS',
+               'I_SDSS','Z_SDSS','G_PS1','R_PS1','I_PS1','Z_PS1','Y_PS1','J','H','KS']
+  ft_datafile: '$SCRATCH/msa/data/ftset_spec_ga_realmags.fits'
+  classes: ['teff','e_teff','logg','e_logg','fe_h','e_fe_h','alpha','e_alpha','age','e_age']
+
+model:
+  layer_dims: [2048, 2048, 1024, 1024, 512, 512, 256, 256]
+  pt_activ_func: 'elu'
+  norm: 'layer'
+  rtdl_embed: 16
+  # decoder_dims: [256, 512, 1024]  # Optional: asymmetric decoder (default: mirrors encoder)
+  saved_weights: '$SCRATCH/msa/checkpoints/pretrain_latest.pth'
+
+training:
+  xp_masking_ratio: 0.9
+  m_masking_ratio: 0.6
+  lr: 0.00001
+  weight_decay: 0.00001
+  lasso: 0
+  optimizer: 'adamw'
+  loss_fn: 'mae'
+  mini_batch_size: 1024
+  epochs: 100
+
+# Recommended for new Narval science runs (see docs/METHODOLOGY.md).
+preprocessing:
+  astrometry_input_policy: snr_clipped
+  astrometry_snr_cap: 10.0
+  parallax_target_space: log10_mas
+  parallax_floor_mas: 1.0e-4
+
+# Encoder LR defaults to training.lr when encoder_lr is null (see finetune.yaml).
+finetuning:
+  num_epochs: 101
+  mini_batch: 512
+  linearprobe: false
+  mask: true
+  multitask: true
+  rncloss: false
+  lr: 0.0001
+  encoder_lr: null
+  lr_scheduler_encoder_decay: 0.95
+  lr_scheduler_head_decay: 0.5
+  lr_scheduler_head_step_epochs: 10
+  opt: 'adamw'
+  active: 'relu'
+  l2: 0.0
+  lf: 'quantile'
+  pert_features: true
+  pert_scale: 1.0
+  pert_ebv_scale: 1.0
+  pert_labels: false
+  ensemble: true
+  seed: 42
+  pert_seed: 42
+  ensemble_path: '$SCRATCH/msa/checkpoints/pretrain_latest.pth'
+  # Match paper Eq. total loss: lambda_pred * L_pred + lambda_rec * L_rec
+  lambda_pred: 0.8
+  lambda_rec: 0.2
+  ensemble_seed: 42
+  ensemble_size: 20
+  # Optional: [Teff, log g, [Fe/H], [alpha/Fe], age, parallax] — up-weight [Fe/H] (index 2) for metal-poor focus
+  quantile_label_weights: null
+  # Optional: confident labels + preserve rare [Fe/H] in splits; enable for VMP-focused training
+  metal_poor:
+    stratify_feh: false
+    feh_stratify_bins: [-10.0, -2.0, -1.0, 0.0, 10.0]
+    require_finite_e_fe_h: false
+    max_e_fe_h: null
+    min_teff: null
+    max_teff: null
+    augment_below_feh: null
+    augment_fraction: 0.0
+
+saving:
+  model_str: '$SCRATCH/msa/runs/ft/masked_stellar_autoencoder_ft.pth'
+  log_file: '$SCRATCH/msa/runs/ft/finetune_msa.log'
+  checkpoint_interval: 50
