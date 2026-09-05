@@ -23,6 +23,17 @@ def test_quantile_loss_sample_weight_changes_value():
     assert not torch.allclose(loss_u, loss_w)
 
 
+def test_pinball_clamp_form_matches_torch_max():
+    """err*q - err.clamp_max(0) must match torch.max((q-1)*err, q*err) elementwise."""
+    torch.manual_seed(0)
+    err = torch.randn(4, 5, 3)
+    q = torch.tensor([0.16, 0.5, 0.84]).view(1, 1, -1)
+    legacy = torch.max((q - 1) * err, q * err)
+    clamp_form = err * q - err.clamp_max(0.0)
+    # float32 op order differs; pinball values must match within float noise
+    assert torch.allclose(legacy, clamp_form, rtol=1e-6, atol=1e-6)
+
+
 def test_sigma_pinball_weights_zero_for_nan_target():
     sig = torch.ones(2, 3)
     y = torch.tensor([[1.0, float("nan"), 3.0], [4.0, 5.0, 6.0]])
